@@ -162,6 +162,8 @@ La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stag
 
 En construcción. **B1 (base del proyecto)** a **B7 (calidad — autenticación JWT)** completos: login con JWT propio (access + refresh token rotado) y rate limiting, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica), y notificaciones de pagos/cuotas por vencer (generadas al vuelo y por un scheduler diario). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
 
+Pendiente de B7 (el resto de "Calidad"): auditoría, documentación OpenAPI más rica, revisión de performance — ver [issue #7](https://github.com/1franky/nexora-api/issues/7).
+
 ## Repositorios relacionados
 
 - [`nexora-web`](https://github.com/1franky/nexora-web) — aplicación web
