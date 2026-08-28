@@ -1,0 +1,6 @@
+-- Migración inicial (baseline).
+--
+-- Aún no existen entidades de dominio. Las tablas de accounts, transactions,
+-- credit_cards, installment_plans, etc. (ver plan.md, seccion 12 "Modelo de
+-- datos inicial") se agregarán en migraciones posteriores conforme avance
+-- el roadmap (B2 en adelante).

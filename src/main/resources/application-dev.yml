@@ -1,0 +1,17 @@
+# Perfil de desarrollo local (Mac).
+#
+# El datasource NO se define aquí: spring-boot-docker-compose levanta el
+# servicio "postgres" definido en compose.yaml y conecta la aplicación
+# automáticamente a él (Service Connection) al ejecutar ./gradlew bootRun.
+spring:
+  docker:
+    compose:
+      enabled: true
+      file: compose.yaml
+  jpa:
+    show-sql: true
+
+logging:
+  level:
+    com.nexora.api: DEBUG
+    org.hibernate.SQL: DEBUG

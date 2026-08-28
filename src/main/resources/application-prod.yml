@@ -1,0 +1,19 @@
+# Perfil de producción (VPS).
+#
+# Todos los valores sensibles se inyectan por variable de entorno; no debe
+# haber credenciales en este archivo. Ver .env.example.
+spring:
+  docker:
+    compose:
+      enabled: false
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    show-sql: false
+
+logging:
+  level:
+    root: INFO
+    com.nexora.api: INFO
