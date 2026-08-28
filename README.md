@@ -48,9 +48,31 @@ budgets
 
 Versionado bajo `/api/v1/`, documentada con OpenAPI. Web y Android consumen el mismo contrato.
 
+Implementado hasta ahora (B2 — finanzas básicas):
+
+```text
+POST /api/v1/users              registro
+GET  /api/v1/users/me
+
+POST /api/v1/accounts
+GET  /api/v1/accounts
+GET  /api/v1/accounts/{id}
+GET  /api/v1/accounts/summary   dinero disponible / patrimonio neto
+
+POST /api/v1/categories
+GET  /api/v1/categories
+
+POST /api/v1/transactions       INCOME / EXPENSE
+GET  /api/v1/transactions?accountId=...
+
+POST /api/v1/transfers          entre dos cuentas del mismo usuario
+```
+
 ## Seguridad
 
-OAuth2/OpenID Connect, JWT + Refresh Tokens, RBAC, HTTPS, auditoría. No se almacenan datos sensibles de tarjetas (CVV, NIP, número completo).
+Login básico real (email + contraseña con BCrypt) contra la tabla de usuarios: el registro (`POST /api/v1/users`) es público, todo lo demás exige autenticación y cada quien solo ve sus propios datos.
+
+OAuth2/OpenID Connect, JWT + Refresh Tokens, RBAC completo, auditoría — quedan para una fase posterior (plan.md, sección 11). No se almacenan datos sensibles de tarjetas (CVV, NIP, número completo).
 
 ## Exposición y red
 
@@ -103,7 +125,7 @@ La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stag
 
 ## Estado del proyecto
 
-En construcción — fase **B1 (base del proyecto)** del roadmap: proyecto Kotlin/Spring Boot, PostgreSQL, Docker Compose, Flyway, configuración por ambientes, seguridad base y OpenAPI ya en pie; CI básico en GitHub Actions. Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
+En construcción. **B1 (base del proyecto)** y **B2 (finanzas básicas)** completos: usuarios con login básico real, cuentas, categorías, ingresos/gastos, transferencias atómicas entre cuentas y cálculo de saldo disponible / patrimonio neto. Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
 
 ## Repositorios relacionados
 

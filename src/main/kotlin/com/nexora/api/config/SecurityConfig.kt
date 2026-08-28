@@ -2,20 +2,27 @@ package com.nexora.api.config
 
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
+import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.config.annotation.web.invoke
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 
 /**
- * Configuración de seguridad base.
+ * Configuración de seguridad base: login básico real (email + contraseña
+ * con BCrypt, ver [com.nexora.api.user.security.NexoraUserDetailsService])
+ * contra la tabla de usuarios. El registro es el único endpoint de negocio
+ * público; todo lo demás exige autenticación.
  *
- * Esto es un placeholder: por ahora solo deja públicos los endpoints de
- * salud y de documentación, y exige autenticación básica para el resto.
- * OAuth2/OpenID Connect + JWT + RBAC (ver plan.md, sección 11 "Seguridad")
- * se implementarán en una fase posterior del roadmap (B1 → seguridad real).
+ * OAuth2/OpenID Connect + JWT + RBAC completos (plan.md, sección 11
+ * "Seguridad") quedan para una fase posterior.
  */
 @Configuration
 class SecurityConfig {
+
+    @Bean
+    fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
 
     @Bean
     fun filterChain(http: HttpSecurity): SecurityFilterChain {
@@ -26,6 +33,7 @@ class SecurityConfig {
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
+                authorize(HttpMethod.POST, "/api/v1/users", permitAll)
                 authorize(anyRequest, authenticated)
             }
             csrf { disable() }
