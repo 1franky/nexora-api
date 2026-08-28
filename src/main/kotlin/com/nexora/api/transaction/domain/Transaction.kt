@@ -11,9 +11,10 @@ import java.time.LocalDate
 import java.util.UUID
 
 /**
- * Tipos de movimiento (plan.md, sección 3). Por ahora B2 solo implementa
- * INCOME, EXPENSE y TRANSFER; el resto se agrega en B3/B4 pero ya se
- * declaran aquí para no tener que migrar el enum más adelante.
+ * Tipos de movimiento (plan.md, sección 3). B2 implementó INCOME, EXPENSE y
+ * TRANSFER; B3 agrega CREDIT_CARD_PURCHASE y CREDIT_CARD_PAYMENT. REFUND y
+ * ADJUSTMENT quedan para más adelante, ya declarados para no migrar el enum
+ * otra vez.
  */
 enum class TransactionType {
     INCOME,
@@ -64,6 +65,9 @@ class Transaction(
     var description: String? = null,
 
     var reference: String? = null,
+
+    /** Comercio donde se hizo la compra (plan.md, sección 5). Solo aplica a CREDIT_CARD_PURCHASE. */
+    var merchant: String? = null,
 
     @Column(name = "category_id")
     var categoryId: UUID? = null,

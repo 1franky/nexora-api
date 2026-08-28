@@ -5,5 +5,6 @@ import java.util.UUID
 
 interface AccountRepository : JpaRepository<Account, UUID> {
     fun findAllByUserId(userId: UUID): List<Account>
+    fun findAllByUserIdAndType(userId: UUID, type: AccountType): List<Account>
     fun findByIdAndUserId(id: UUID, userId: UUID): Account?
 }
