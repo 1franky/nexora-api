@@ -57,25 +57,22 @@ data class CreditCardResponse(
     val status: CreditCardStatus,
 ) {
     companion object {
-        fun from(view: CreditCardView): CreditCardResponse {
-            val currentDebt = view.account.balance.negate().max(BigDecimal.ZERO)
-            return CreditCardResponse(
-                id = requireNotNull(view.creditCard.id),
-                accountId = requireNotNull(view.account.id),
-                name = view.creditCard.name,
-                bank = view.creditCard.bank,
-                last4 = view.creditCard.last4,
-                currency = view.account.currency,
-                creditLimit = view.creditCard.creditLimit,
-                currentDebt = currentDebt,
-                availableCredit = view.availableCredit,
-                closingDay = view.creditCard.closingDay,
-                paymentDueDay = view.creditCard.paymentDueDay,
-                nextClosingDate = view.nextClosingDate,
-                nextPaymentDueDate = view.nextPaymentDueDate,
-                status = view.creditCard.status,
-            )
-        }
+        fun from(view: CreditCardView): CreditCardResponse = CreditCardResponse(
+            id = requireNotNull(view.creditCard.id),
+            accountId = requireNotNull(view.account.id),
+            name = view.creditCard.name,
+            bank = view.creditCard.bank,
+            last4 = view.creditCard.last4,
+            currency = view.account.currency,
+            creditLimit = view.creditCard.creditLimit,
+            currentDebt = view.currentDebt,
+            availableCredit = view.availableCredit,
+            closingDay = view.creditCard.closingDay,
+            paymentDueDay = view.creditCard.paymentDueDay,
+            nextClosingDate = view.nextClosingDate,
+            nextPaymentDueDate = view.nextPaymentDueDate,
+            status = view.creditCard.status,
+        )
     }
 }
 

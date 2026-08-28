@@ -133,6 +133,17 @@ class InstallmentPlanService(
         return installmentPlanRepository.findAllByCreditCardId(creditCardId).map { toView(it) }
     }
 
+    /**
+     * Planes ACTIVE de todas las tarjetas del usuario, sin cargar sus cuotas
+     * (usado por el dashboard para agregaciones a nivel de plan, no de cuota).
+     */
+    fun listActivePlansForUser(userId: UUID): List<InstallmentPlan> {
+        val cardIds = creditCardService.listForUser(userId).mapNotNull { it.creditCard.id }
+        if (cardIds.isEmpty()) return emptyList()
+        return installmentPlanRepository.findAllByCreditCardIdIn(cardIds)
+            .filter { it.status == InstallmentPlanStatus.ACTIVE }
+    }
+
     /** Busca un plan y valida que su tarjeta pertenezca a [userId]; si no, se trata igual que "no existe". */
     fun getOwned(userId: UUID, planId: UUID): InstallmentPlanView {
         val plan = installmentPlanRepository.findById(planId)

@@ -17,7 +17,10 @@ data class CreditCardView(
     val availableCredit: BigDecimal,
     val nextClosingDate: LocalDate,
     val nextPaymentDueDate: LocalDate,
-)
+) {
+    /** Saldo utilizado (deuda), siempre >= 0 — ver convención de signo en [Account.balance]. */
+    val currentDebt: BigDecimal get() = account.balance.negate().max(BigDecimal.ZERO)
+}
 
 @Service
 class CreditCardService(
