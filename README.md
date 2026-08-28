@@ -48,7 +48,7 @@ budgets
 
 Versionado bajo `/api/v1/`, documentada con OpenAPI. Web y Android consumen el mismo contrato.
 
-Implementado hasta ahora (B2 — finanzas básicas, B3 — tarjetas de crédito, B4 — MSI/MCI, B5 — dashboard):
+Implementado hasta ahora (B2 — finanzas básicas, B3 — tarjetas de crédito, B4 — MSI/MCI, B5 — dashboard, B6 — notificaciones):
 
 ```text
 POST /api/v1/users              registro
@@ -82,6 +82,10 @@ GET  /api/v1/dashboard?month=yyyy-MM   patrimonio, disponible, ingresos/gastos d
                                         categoría), deuda y crédito disponible de tarjetas,
                                         próximos pagos, compromiso mensual MSI/MCI, evolución
                                         de patrimonio/gastos (6 meses) y últimos movimientos
+
+GET  /api/v1/notifications?unreadOnly=false   genera al vuelo lo que falte y lista (más reciente primero)
+POST /api/v1/notifications/{id}/read
+POST /api/v1/notifications/read-all
 ```
 
 ## Seguridad
@@ -89,6 +93,10 @@ GET  /api/v1/dashboard?month=yyyy-MM   patrimonio, disponible, ingresos/gastos d
 Login básico real (email + contraseña con BCrypt) contra la tabla de usuarios: el registro (`POST /api/v1/users`) es público, todo lo demás exige autenticación y cada quien solo ve sus propios datos.
 
 OAuth2/OpenID Connect, JWT + Refresh Tokens, RBAC completo, auditoría — quedan para una fase posterior (plan.md, sección 11). No se almacenan datos sensibles de tarjetas (CVV, NIP, número completo).
+
+## Notificaciones
+
+Se generan `PAYMENT_DUE` / `PAYMENT_DUE_SOON` (tarjeta con deuda cuyo pago vence hoy o en los próximos 3 días) e `INSTALLMENT_DUE` (cuota de un plan MSI/MCI por vencer). Se generan tanto al vuelo (cada `GET /api/v1/notifications`) como por un scheduler diario (`@Scheduled`, 8am), pensado para cuando se agregue push/email — hoy solo quedan disponibles vía esta API ("notificaciones web"). `PAYMENT_OVERDUE`, `BUDGET_EXCEEDED` y `UNUSUAL_EXPENSE` están declaradas pero no se disparan todavía (requieren seguimiento por ciclo/estado de cuenta, presupuestos, y detección de anomalías respectivamente — plan.md, sección 31).
 
 ## Exposición y red
 
@@ -141,7 +149,7 @@ La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stag
 
 ## Estado del proyecto
 
-En construcción. **B1 (base del proyecto)** a **B5 (dashboard)** completos: usuarios con login básico real, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, y un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
+En construcción. **B1 (base del proyecto)** a **B6 (notificaciones)** completos: usuarios con login básico real, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica), y notificaciones de pagos/cuotas por vencer (generadas al vuelo y por un scheduler diario). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
 
 ## Repositorios relacionados
 
