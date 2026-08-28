@@ -40,6 +40,9 @@ class AccountService(
 
     fun listForUser(userId: UUID): List<Account> = accountRepository.findAllByUserId(userId)
 
+    fun listForUserByType(userId: UUID, type: AccountType): List<Account> =
+        accountRepository.findAllByUserIdAndType(userId, type)
+
     /** Busca una cuenta y valida que pertenezca a [userId]; si no, se trata igual que "no existe". */
     fun getOwned(userId: UUID, accountId: UUID): Account =
         accountRepository.findByIdAndUserId(accountId, userId)

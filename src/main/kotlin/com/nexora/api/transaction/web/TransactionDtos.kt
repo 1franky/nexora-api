@@ -58,6 +58,7 @@ data class TransactionResponse(
     val categoryId: UUID?,
     val transferGroupId: UUID?,
     val counterAccountId: UUID?,
+    val merchant: String?,
     val status: TransactionStatus,
     val createdAt: Instant,
 ) {
@@ -73,6 +74,7 @@ data class TransactionResponse(
             categoryId = transaction.categoryId,
             transferGroupId = transaction.transferGroupId,
             counterAccountId = transaction.counterAccountId,
+            merchant = transaction.merchant,
             status = transaction.status,
             createdAt = requireNotNull(transaction.createdAt),
         )
