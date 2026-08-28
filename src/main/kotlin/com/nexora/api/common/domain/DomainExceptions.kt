@@ -11,3 +11,6 @@ class ForbiddenException(message: String) : RuntimeException(message)
 
 /** Ya existe un recurso con ese identificador único (ej. email duplicado). */
 class ConflictException(message: String) : RuntimeException(message)
+
+/** Credenciales o token inválido/expirado (login, refresh). */
+class UnauthorizedException(message: String) : RuntimeException(message)

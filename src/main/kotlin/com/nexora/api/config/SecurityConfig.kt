@@ -1,5 +1,6 @@
 package com.nexora.api.config
 
+import com.nexora.api.user.security.NexoraJwtAuthenticationConverter
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.http.HttpMethod
@@ -10,16 +11,22 @@ import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.security.web.SecurityFilterChain
 
 /**
- * Configuración de seguridad base: login básico real (email + contraseña
- * con BCrypt, ver [com.nexora.api.user.security.NexoraUserDetailsService])
- * contra la tabla de usuarios. El registro es el único endpoint de negocio
- * público; todo lo demás exige autenticación.
+ * Configuración de seguridad: autenticación con JWT propio (ver
+ * [com.nexora.api.auth.domain.AuthService] — login/refresh/logout bajo
+ * /api/v1/auth, públicos). El access token lo valida este mismo backend
+ * como resource server (no hay Authorization Server externo);
+ * [NexoraJwtAuthenticationConverter] resuelve el `sub` del JWT a un
+ * [com.nexora.api.user.security.NexoraUserDetails] real, así los
+ * controladores no necesitan saber que el mecanismo cambió.
  *
- * OAuth2/OpenID Connect + JWT + RBAC completos (plan.md, sección 11
- * "Seguridad") quedan para una fase posterior.
+ * RBAC más allá de un único rol ROLE_USER, y OAuth2/OpenID Connect con un
+ * proveedor externo (plan.md, sección 11 "Seguridad"), quedan para si
+ * llegan a hacer falta — hoy no hay ningún endpoint que distinga roles.
  */
 @Configuration
-class SecurityConfig {
+class SecurityConfig(
+    private val nexoraJwtAuthenticationConverter: NexoraJwtAuthenticationConverter,
+) {
 
     @Bean
     fun passwordEncoder(): PasswordEncoder = BCryptPasswordEncoder()
@@ -34,10 +41,15 @@ class SecurityConfig {
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
                 authorize(HttpMethod.POST, "/api/v1/users", permitAll)
+                authorize("/api/v1/auth/**", permitAll)
                 authorize(anyRequest, authenticated)
             }
             csrf { disable() }
-            httpBasic { }
+            oauth2ResourceServer {
+                jwt {
+                    jwtAuthenticationConverter = nexoraJwtAuthenticationConverter
+                }
+            }
         }
         return http.build()
     }

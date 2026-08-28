@@ -48,9 +48,13 @@ budgets
 
 Versionado bajo `/api/v1/`, documentada con OpenAPI. Web y Android consumen el mismo contrato.
 
-Implementado hasta ahora (B2 — finanzas básicas, B3 — tarjetas de crédito, B4 — MSI/MCI, B5 — dashboard, B6 — notificaciones):
+Implementado hasta ahora (B2 — finanzas básicas, B3 — tarjetas de crédito, B4 — MSI/MCI, B5 — dashboard, B6 — notificaciones, B7 — auth JWT):
 
 ```text
+POST /api/v1/auth/login     email + contraseña -> access token (JWT) + refresh token
+POST /api/v1/auth/refresh   cambia un refresh token válido por un access token nuevo (rota el refresh token)
+POST /api/v1/auth/logout    revoca un refresh token
+
 POST /api/v1/users              registro
 GET  /api/v1/users/me
 
@@ -90,9 +94,16 @@ POST /api/v1/notifications/read-all
 
 ## Seguridad
 
-Login básico real (email + contraseña con BCrypt) contra la tabla de usuarios: el registro (`POST /api/v1/users`) es público, todo lo demás exige autenticación y cada quien solo ve sus propios datos.
+Autenticación con JWT propio: esta misma API emite y valida sus tokens (no hay un Authorization Server externo como Keycloak/Auth0 — Web y Android son clientes propios, de primera parte).
 
-OAuth2/OpenID Connect, JWT + Refresh Tokens, RBAC completo, auditoría — quedan para una fase posterior (plan.md, sección 11). No se almacenan datos sensibles de tarjetas (CVV, NIP, número completo).
+- **Access token**: JWT firmado HS256, corta duración (15 min por defecto). Se envía como `Authorization: Bearer <token>` en cada request.
+- **Refresh token**: opaco (no es un JWT), 30 días por defecto. Solo se guarda su hash (SHA-256) en base de datos — igual que una contraseña. Se **rota** en cada uso: `POST /api/v1/auth/refresh` revoca el que se usó y entrega uno nuevo; reusar uno ya rotado (señal de robo) es rechazado.
+- `POST /api/v1/users` (registro) y todo `/api/v1/auth/**` son los únicos endpoints públicos; el resto exige un access token válido y cada quien solo ve sus propios datos.
+- **Rate limiting** (en memoria, por IP): 10 intentos/minuto en login y registro, para mitigar fuerza bruta. Solo válido para una instancia; si la API llega a escalar horizontalmente esto debería moverse a un store compartido (Redis).
+
+`JWT_SECRET` (≥32 caracteres, ver `.env.example`) firma los tokens — cámbialo en producción, nunca uses el valor de ejemplo.
+
+RBAC más allá de un único rol (`ROLE_USER`), OAuth2/OpenID Connect con un proveedor externo, y auditoría completa (`created_by`, `audit_log`) quedan para si llegan a hacer falta (plan.md, secciones 11 y 15) — hoy no hay ningún endpoint que distinga roles. No se almacenan datos sensibles de tarjetas (CVV, NIP, número completo).
 
 ## Notificaciones
 
@@ -149,7 +160,7 @@ La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stag
 
 ## Estado del proyecto
 
-En construcción. **B1 (base del proyecto)** a **B6 (notificaciones)** completos: usuarios con login básico real, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica), y notificaciones de pagos/cuotas por vencer (generadas al vuelo y por un scheduler diario). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
+En construcción. **B1 (base del proyecto)** a **B7 (calidad — autenticación JWT)** completos: login con JWT propio (access + refresh token rotado) y rate limiting, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica), y notificaciones de pagos/cuotas por vencer (generadas al vuelo y por un scheduler diario). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
 
 ## Repositorios relacionados
 

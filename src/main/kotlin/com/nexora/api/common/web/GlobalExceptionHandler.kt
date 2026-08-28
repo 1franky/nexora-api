@@ -4,6 +4,7 @@ import com.nexora.api.common.domain.BusinessRuleException
 import com.nexora.api.common.domain.ConflictException
 import com.nexora.api.common.domain.ForbiddenException
 import com.nexora.api.common.domain.NotFoundException
+import com.nexora.api.common.domain.UnauthorizedException
 import jakarta.servlet.http.HttpServletRequest
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -29,6 +30,10 @@ class GlobalExceptionHandler {
     @ExceptionHandler(ConflictException::class)
     fun handleConflict(ex: ConflictException, request: HttpServletRequest): ResponseEntity<ApiError> =
         respond(HttpStatus.CONFLICT, ex.message, request)
+
+    @ExceptionHandler(UnauthorizedException::class)
+    fun handleUnauthorized(ex: UnauthorizedException, request: HttpServletRequest): ResponseEntity<ApiError> =
+        respond(HttpStatus.UNAUTHORIZED, ex.message, request)
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(ex: MethodArgumentNotValidException, request: HttpServletRequest): ResponseEntity<ApiError> {

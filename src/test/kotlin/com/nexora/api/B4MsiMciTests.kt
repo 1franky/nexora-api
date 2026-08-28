@@ -7,7 +7,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic
+import com.nexora.api.support.registerAndAuthenticate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -166,15 +166,7 @@ class B4MsiMciTests {
 
     // --- helpers ---
 
-    private fun registerAndAuth(prefix: String): RequestPostProcessor {
-        val email = "$prefix+${System.nanoTime()}@nexora.test"
-        mockMvc.perform(
-            post("/api/v1/users")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"$email","password":"$PASSWORD","displayName":"Test User"}""")
-        ).andExpect(status().isCreated)
-        return httpBasic(email, PASSWORD)
-    }
+    private fun registerAndAuth(prefix: String): RequestPostProcessor = mockMvc.registerAndAuthenticate(prefix)
 
     private fun createCreditCard(auth: RequestPostProcessor): String {
         val response = mockMvc.perform(
@@ -204,9 +196,5 @@ class B4MsiMciTests {
 
     private fun assertMoneyEquals(expected: String, actual: String) {
         assertEquals(0, BigDecimal(expected).compareTo(BigDecimal(actual)), "esperado $expected pero fue $actual")
-    }
-
-    companion object {
-        private const val PASSWORD = "password123"
     }
 }
