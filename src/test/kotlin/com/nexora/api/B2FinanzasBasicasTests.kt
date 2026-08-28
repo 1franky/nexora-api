@@ -7,7 +7,6 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -33,7 +32,7 @@ class B2FinanzasBasicasTests {
         val email = uniqueEmail("ana")
         registerUser(email)
 
-        val response = mockMvc.perform(get("/api/v1/users/me").with(httpBasic(email, PASSWORD)))
+        val response = mockMvc.perform(get("/api/v1/users/me").with(bearerLogin(email, PASSWORD)))
             .andExpect(status().isOk)
             .andReturn().response.contentAsString
 
@@ -61,7 +60,7 @@ class B2FinanzasBasicasTests {
     fun `crear cuenta y consultarla`() {
         val email = uniqueEmail("cuentas")
         registerUser(email)
-        val auth = httpBasic(email, PASSWORD)
+        val auth = bearerLogin(email, PASSWORD)
 
         val accountId = createAccount(auth, name = "Débito BBVA", type = "DEBIT", openingBalance = "1000.00")
 
@@ -72,7 +71,7 @@ class B2FinanzasBasicasTests {
     fun `registrar un ingreso incrementa el saldo de la cuenta`() {
         val email = uniqueEmail("ingreso")
         registerUser(email)
-        val auth = httpBasic(email, PASSWORD)
+        val auth = bearerLogin(email, PASSWORD)
         val accountId = createAccount(auth, name = "Ahorro", type = "SAVINGS", openingBalance = "0")
 
         mockMvc.perform(
@@ -89,7 +88,7 @@ class B2FinanzasBasicasTests {
     fun `registrar un gasto decrementa el saldo de la cuenta`() {
         val email = uniqueEmail("gasto")
         registerUser(email)
-        val auth = httpBasic(email, PASSWORD)
+        val auth = bearerLogin(email, PASSWORD)
         val accountId = createAccount(auth, name = "Débito", type = "DEBIT", openingBalance = "1000")
 
         mockMvc.perform(
@@ -106,7 +105,7 @@ class B2FinanzasBasicasTests {
     fun `una categoria de tipo incorrecto es rechazada`() {
         val email = uniqueEmail("cat")
         registerUser(email)
-        val auth = httpBasic(email, PASSWORD)
+        val auth = bearerLogin(email, PASSWORD)
         val accountId = createAccount(auth, name = "Débito", type = "DEBIT", openingBalance = "1000")
 
         val categoryResponse = mockMvc.perform(
@@ -132,7 +131,7 @@ class B2FinanzasBasicasTests {
     fun `una transferencia mueve dinero entre cuentas sin afectar el total disponible`() {
         val email = uniqueEmail("transfer")
         registerUser(email)
-        val auth = httpBasic(email, PASSWORD)
+        val auth = bearerLogin(email, PASSWORD)
         val accountA = createAccount(auth, name = "Cuenta A", type = "DEBIT", openingBalance = "1000")
         val accountB = createAccount(auth, name = "Cuenta B", type = "SAVINGS", openingBalance = "0")
 
@@ -159,7 +158,7 @@ class B2FinanzasBasicasTests {
     fun `transferir a la misma cuenta es rechazado`() {
         val email = uniqueEmail("selftransfer")
         registerUser(email)
-        val auth = httpBasic(email, PASSWORD)
+        val auth = bearerLogin(email, PASSWORD)
         val accountId = createAccount(auth, name = "Cuenta", type = "DEBIT", openingBalance = "500")
 
         mockMvc.perform(
@@ -174,12 +173,12 @@ class B2FinanzasBasicasTests {
     fun `un usuario no puede ver cuentas de otro usuario`() {
         val ownerEmail = uniqueEmail("owner")
         registerUser(ownerEmail)
-        val ownerAuth = httpBasic(ownerEmail, PASSWORD)
+        val ownerAuth = bearerLogin(ownerEmail, PASSWORD)
         val accountId = createAccount(ownerAuth, name = "Privada", type = "DEBIT", openingBalance = "10")
 
         val intruderEmail = uniqueEmail("intruder")
         registerUser(intruderEmail)
-        val intruderAuth = httpBasic(intruderEmail, PASSWORD)
+        val intruderAuth = bearerLogin(intruderEmail, PASSWORD)
 
         mockMvc.perform(get("/api/v1/accounts/$accountId").with(intruderAuth))
             .andExpect(status().isNotFound)
@@ -203,6 +202,17 @@ class B2FinanzasBasicasTests {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(registerBody(email))
         ).andExpect(status().isCreated)
+    }
+
+    /** Login real (JWT) contra /api/v1/auth/login; reemplaza al httpBasic de antes de B7. */
+    private fun bearerLogin(email: String, password: String): RequestPostProcessor {
+        val response = mockMvc.perform(
+            post("/api/v1/auth/login")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"email":"$email","password":"$password"}""")
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        val accessToken = JsonPath.read<String>(response, "$.accessToken")
+        return RequestPostProcessor { request -> request.addHeader("Authorization", "Bearer $accessToken"); request }
     }
 
     private fun createAccount(auth: RequestPostProcessor, name: String, type: String, openingBalance: String): String {

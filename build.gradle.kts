@@ -25,6 +25,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 	implementation("org.springframework.boot:spring-boot-starter-flyway")
 	implementation("org.springframework.boot:spring-boot-starter-security")
+	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 	implementation("org.springframework.boot:spring-boot-starter-webmvc")
 	implementation("org.flywaydb:flyway-database-postgresql")
@@ -59,4 +60,14 @@ allOpen {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	// Igual que en producción, el secreto viene de una variable de entorno;
+	// este es un valor fijo solo para que los tests sean deterministas.
+	environment("JWT_SECRET", "test-only-secret-not-for-production-0123456789-0123456789")
+	// Spring cachea el ApplicationContext entre clases de test con la misma
+	// configuración: el RateLimitFilter es el mismo singleton para todo el
+	// suite, y decenas de tests registran usuarios repetidamente desde la
+	// misma IP simulada. Se sube el límite para que no se dispare entre
+	// tests de otros módulos; el comportamiento de 429 en sí se prueba
+	// aparte, de forma aislada (RateLimitFilterTests, sin Spring context).
+	environment("NEXORA_RATE_LIMIT_MAX_REQUESTS", "100000")
 }

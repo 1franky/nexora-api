@@ -9,7 +9,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Import
 import org.springframework.http.MediaType
-import org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic
+import com.nexora.api.support.registerAuthenticateAndGetUserId
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
@@ -181,16 +181,7 @@ class B6NotificacionesTests {
     // --- helpers ---
 
     private fun registerAndAuth(prefix: String): Pair<RequestPostProcessor, UUID> {
-        val email = "$prefix+${System.nanoTime()}@nexora.test"
-        mockMvc.perform(
-            post("/api/v1/users")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"email":"$email","password":"$PASSWORD","displayName":"Test User"}""")
-        ).andExpect(status().isCreated)
-        val auth = httpBasic(email, PASSWORD)
-        val me = mockMvc.perform(get("/api/v1/users/me").with(auth))
-            .andExpect(status().isOk).andReturn().response.contentAsString
-        return auth to UUID.fromString(JsonPath.read(me, "$.id"))
+        return mockMvc.registerAuthenticateAndGetUserId(prefix)
     }
 
     private fun createCreditCard(auth: RequestPostProcessor): String {
@@ -220,7 +211,4 @@ class B6NotificacionesTests {
         return LocalDate.parse(JsonPath.read(response, "$.nextPaymentDueDate"))
     }
 
-    companion object {
-        private const val PASSWORD = "password123"
-    }
 }
