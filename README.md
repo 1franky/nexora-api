@@ -48,7 +48,7 @@ budgets
 
 Versionado bajo `/api/v1/`, documentada con OpenAPI. Web y Android consumen el mismo contrato.
 
-Implementado hasta ahora (B2 — finanzas básicas, B3 — tarjetas de crédito, B4 — MSI/MCI):
+Implementado hasta ahora (B2 — finanzas básicas, B3 — tarjetas de crédito, B4 — MSI/MCI, B5 — dashboard):
 
 ```text
 POST /api/v1/users              registro
@@ -77,6 +77,11 @@ POST /api/v1/credit-cards/{id}/installment-plans   compra a MSI/MCI
 GET  /api/v1/credit-cards/{id}/installment-plans
 GET  /api/v1/installment-plans/{id}                         cuotas + saldo financiado + próxima cuota
 POST /api/v1/installment-plans/{id}/installments/{installmentId}/pay
+
+GET  /api/v1/dashboard?month=yyyy-MM   patrimonio, disponible, ingresos/gastos del mes (+ por
+                                        categoría), deuda y crédito disponible de tarjetas,
+                                        próximos pagos, compromiso mensual MSI/MCI, evolución
+                                        de patrimonio/gastos (6 meses) y últimos movimientos
 ```
 
 ## Seguridad
@@ -136,7 +141,7 @@ La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stag
 
 ## Estado del proyecto
 
-En construcción. **B1 (base del proyecto)**, **B2 (finanzas básicas)**, **B3 (tarjetas de crédito)** y **B4 (MSI/MCI)** completos: usuarios con login básico real, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, y cálculo de saldo disponible / patrimonio neto. Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
+En construcción. **B1 (base del proyecto)** a **B5 (dashboard)** completos: usuarios con login básico real, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, y un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).
 
 ## Repositorios relacionados
 
