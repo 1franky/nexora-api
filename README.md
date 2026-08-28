@@ -28,7 +28,7 @@ nexora-android    ──┘
 - **Migraciones**: Flyway
 - **Documentación**: springdoc-openapi / Swagger UI
 - **Build**: Gradle (Kotlin DSL)
-- **Infraestructura**: Docker Compose (desarrollo), Docker (despliegue en el VPS)
+- **Infraestructura**: Docker Compose (mismo `compose.yaml` en desarrollo y en el VPS)
 
 ## Arquitectura
 
@@ -52,39 +52,54 @@ Versionado bajo `/api/v1/`, documentada con OpenAPI. Web y Android consumen el m
 
 OAuth2/OpenID Connect, JWT + Refresh Tokens, RBAC, HTTPS, auditoría. No se almacenan datos sensibles de tarjetas (CVV, NIP, número completo).
 
+## Exposición y red
+
+- La API se expone siempre en el **puerto 3005** (host y contenedor), tanto en desarrollo como en el VPS.
+- Postgres **no publica ningún puerto al host**: solo es alcanzable por el servicio `api` a través de la red interna de Docker `nexora-net` (ver [`compose.yaml`](./compose.yaml)). No es posible conectarse a la base de datos desde fuera de esa red (ni siquiera desde el propio host).
+
 ## Desarrollo local (macOS)
 
-El desarrollo se hace únicamente en local; el despliegue final se hace aparte en el VPS (ver sección siguiente).
+El desarrollo se hace únicamente en local, siempre contenerizado con Docker Compose (la API y Postgres corren como contenedores en la misma red interna); el despliegue final se hace aparte en el VPS con el mismo `compose.yaml` (ver sección siguiente).
 
-Requisitos: JDK 21 (usa el toolchain de Gradle si no está instalado), Docker Desktop.
+Requisitos: Docker Desktop.
 
 ```bash
-# 1. Levanta Postgres y arranca la app (perfil "dev" por defecto).
-#    Spring Boot Docker Compose levanta compose.yaml automáticamente.
-./gradlew bootRun
+# 1. Copiar variables de entorno (una sola vez)
+cp .env.example .env
 
-# 2. Ejecutar pruebas (usan Testcontainers, requiere Docker corriendo)
-./gradlew test
+# 2. Levantar API + Postgres (perfil "dev" por defecto)
+docker compose up --build
 
 # 3. Documentación interactiva de la API
-open http://localhost:8080/swagger-ui.html
+open http://localhost:3005/swagger-ui.html
 
 # 4. Health check
-curl http://localhost:8080/actuator/health
+curl http://localhost:3005/actuator/health
+
+# 5. Apagar
+docker compose down
 ```
 
-La base de datos local vive en el contenedor `nexora-postgres` (definido en [`compose.yaml`](./compose.yaml)), con datos persistidos en un volumen Docker.
+Los datos de Postgres persisten en un volumen Docker (`nexora-postgres-data`) entre reinicios.
+
+Para compilar o correr las pruebas fuera de Docker (las pruebas usan Testcontainers, con su propio contenedor efímero, independiente de `compose.yaml`):
+
+```bash
+./gradlew build
+./gradlew test
+```
+
+> Nota: `./gradlew bootRun` por sí solo ya **no** conecta a la base de datos — Postgres no tiene puerto publicado al host. El flujo de desarrollo es `docker compose up --build`.
 
 ## Despliegue (VPS)
 
-La imagen de producción se construye con el [`Dockerfile`](./Dockerfile) (multi-stage, JDK 21 → JRE 21). En el VPS se ejecuta con el perfil `prod` y las variables de [`.env.example`](./.env.example) (copiar a `.env`, nunca versionarlo):
+Se usa el mismo [`compose.yaml`](./compose.yaml) que en desarrollo, con un `.env` propio del VPS (`SPRING_PROFILES_ACTIVE=prod` y credenciales reales, nunca las de dev):
 
 ```bash
-docker build -t nexora-api .
-docker run --env-file .env -p 8080:8080 nexora-api
+docker compose up --build -d
 ```
 
-`SPRING_PROFILES_ACTIVE=prod` desactiva Docker Compose Support y toma el datasource de `DB_URL` / `DB_USERNAME` / `DB_PASSWORD` (Postgres del VPS, fuera de este repo).
+La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stage, JDK 21 → JRE 21). Postgres sigue sin exponer ningún puerto al host/Internet, ni en el VPS.
 
 ## Estado del proyecto
 

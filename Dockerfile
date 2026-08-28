@@ -1,5 +1,5 @@
-# Imagen para despliegue en el VPS. El desarrollo local se hace fuera de
-# Docker (ver README.md / plan.md); esta imagen solo se usa para producción.
+# Misma imagen para dev local (compose.yaml) y para el despliegue en el VPS;
+# lo que cambia entre ambos es el .env (ver .env.example / README.md).
 
 # --- Etapa de build ---
 FROM eclipse-temurin:21-jdk AS build
@@ -21,5 +21,5 @@ RUN addgroup --system nexora && adduser --system --ingroup nexora nexora
 COPY --from=build /workspace/build/libs/*.jar app.jar
 USER nexora
 
-EXPOSE 8080
+EXPOSE 3005
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -1,15 +1,8 @@
 # Perfil de producción (VPS).
 #
-# Todos los valores sensibles se inyectan por variable de entorno; no debe
-# haber credenciales en este archivo. Ver .env.example.
+# Igual que en dev, el datasource se inyecta por variable de entorno (ver
+# .env.example / compose.yaml); aquí solo se ajusta lo específico de prod.
 spring:
-  docker:
-    compose:
-      enabled: false
-  datasource:
-    url: ${DB_URL}
-    username: ${DB_USERNAME}
-    password: ${DB_PASSWORD}
   jpa:
     show-sql: false
 

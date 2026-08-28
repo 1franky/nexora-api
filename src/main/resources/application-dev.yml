@@ -1,13 +1,10 @@
 # Perfil de desarrollo local (Mac).
 #
-# El datasource NO se define aquí: spring-boot-docker-compose levanta el
-# servicio "postgres" definido en compose.yaml y conecta la aplicación
-# automáticamente a él (Service Connection) al ejecutar ./gradlew bootRun.
+# La app corre contenerizada junto con Postgres (ver compose.yaml, servicio
+# "api"), en la misma red interna de Docker. El datasource (DB_URL,
+# DB_USERNAME, DB_PASSWORD) lo inyecta compose.yaml como variables de
+# entorno; no se define aquí.
 spring:
-  docker:
-    compose:
-      enabled: true
-      file: compose.yaml
   jpa:
     show-sql: true
 

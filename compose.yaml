@@ -1,15 +1,48 @@
+# Stack de nexora-api: la API y Postgres corren siempre en la misma red
+# interna de Docker ("nexora-net"). Postgres no publica ningún puerto al
+# host: solo es alcanzable desde el servicio "api" a través de esa red.
+# Este mismo compose se usa tanto en desarrollo local (Mac) como en el VPS;
+# lo que cambia entre ambos es el archivo .env (ver .env.example).
 services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: nexora-api
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      DB_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB:-nexora}
+      DB_USERNAME: ${POSTGRES_USER:-nexora}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-nexora}
+    ports:
+      - '3005:3005'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - nexora-net
+
   postgres:
     image: 'postgres:16-alpine'
     container_name: nexora-postgres
     environment:
-      - 'POSTGRES_DB=nexora'
-      - 'POSTGRES_USER=nexora'
-      - 'POSTGRES_PASSWORD=nexora'
-    ports:
-      - '5432'
+      POSTGRES_DB: ${POSTGRES_DB:-nexora}
+      POSTGRES_USER: ${POSTGRES_USER:-nexora}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexora}
+    # Sin "ports": no se publica al host, solo es visible dentro de nexora-net.
     volumes:
       - 'nexora-postgres-data:/var/lib/postgresql/data'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-nexora} -d ${POSTGRES_DB:-nexora}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - nexora-net
+
+networks:
+  nexora-net:
+    driver: bridge
 
 volumes:
   nexora-postgres-data:
