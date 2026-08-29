@@ -60,10 +60,11 @@ class TransactionController(
         return ResponseEntity.status(HttpStatus.CREATED).body(TransactionResponse.from(transaction))
     }
 
+    /** Sin [accountId], lista los movimientos de todas las cuentas del usuario juntos. */
     @GetMapping
-    fun listByAccount(
+    fun list(
         @AuthenticationPrincipal principal: NexoraUserDetails,
-        @RequestParam accountId: UUID,
+        @RequestParam(required = false) accountId: UUID?,
     ): List<TransactionResponse> =
-        transactionService.listForAccount(principal.userId, accountId).map(TransactionResponse::from)
+        transactionService.listForUser(principal.userId, accountId).map(TransactionResponse::from)
 }

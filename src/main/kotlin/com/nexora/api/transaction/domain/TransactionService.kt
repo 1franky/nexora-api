@@ -4,7 +4,9 @@ import com.nexora.api.account.domain.Account
 import com.nexora.api.account.domain.AccountService
 import com.nexora.api.account.domain.AccountStatus
 import com.nexora.api.account.domain.AccountType
+import com.nexora.api.category.domain.Category
 import com.nexora.api.category.domain.CategoryService
+import com.nexora.api.category.domain.CategoryStatus
 import com.nexora.api.category.domain.CategoryType
 import com.nexora.api.common.domain.BusinessRuleException
 import org.springframework.data.domain.Sort
@@ -63,6 +65,7 @@ class TransactionService(
                     "La categoría '${category.name}' es de tipo ${category.type}, no se puede usar en un movimiento de tipo $type."
                 )
             }
+            requireActiveCategory(category)
         }
 
         val balanceEffect = if (type == TransactionType.INCOME) amount else amount.negate()
@@ -159,6 +162,7 @@ class TransactionService(
         if (category != null && category.type != CategoryType.EXPENSE) {
             throw BusinessRuleException("La categoría '${category.name}' debe ser de tipo EXPENSE para usarse en una compra.")
         }
+        if (category != null) requireActiveCategory(category)
 
         val balanceEffect = amount.negate()
         val transaction = Transaction(
@@ -233,9 +237,22 @@ class TransactionService(
         return TransferResult(savedOutgoing, savedIncoming)
     }
 
-    fun listForAccount(userId: UUID, accountId: UUID): List<Transaction> {
-        accountService.getOwned(userId, accountId) // valida propiedad de la cuenta
-        return transactionRepository.findAllByAccountId(accountId, Sort.by(Sort.Direction.DESC, "date", "createdAt"))
+    /**
+     * [accountId] es opcional: con él, lista solo esa cuenta (validando
+     * propiedad, como antes); sin él, lista de todas las cuentas del
+     * usuario juntas — pedido explícitamente para no obligar a elegir una
+     * cuenta antes de poder ver los movimientos (issue de nexora-web sobre
+     * el filtro de Movimientos).
+     */
+    fun listForUser(userId: UUID, accountId: UUID?): List<Transaction> {
+        val sort = Sort.by(Sort.Direction.DESC, "date", "createdAt")
+        if (accountId != null) {
+            accountService.getOwned(userId, accountId) // valida propiedad de la cuenta
+            return transactionRepository.findAllByAccountId(accountId, sort)
+        }
+        val accountIds = accountService.listForUser(userId).mapNotNull { it.id }
+        if (accountIds.isEmpty()) return emptyList()
+        return transactionRepository.findAllByAccountIdIn(accountIds, sort)
     }
 
     private fun requireActiveOwnedAccount(userId: UUID, accountId: UUID): Account {
@@ -249,6 +266,13 @@ class TransactionService(
     private fun requireAccountType(account: Account, expected: AccountType, message: String) {
         if (account.type != expected) {
             throw BusinessRuleException(message)
+        }
+    }
+
+    /** Una categoría archivada (gestión completa, plan.md sección 19) sigue existiendo para lo ya categorizado, pero no se puede usar en un movimiento nuevo. */
+    private fun requireActiveCategory(category: Category) {
+        if (category.status != CategoryStatus.ACTIVE) {
+            throw BusinessRuleException("La categoría '${category.name}' está archivada.")
         }
     }
 

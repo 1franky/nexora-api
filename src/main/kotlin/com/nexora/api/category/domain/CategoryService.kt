@@ -21,4 +21,25 @@ class CategoryService(
     fun getOwned(userId: UUID, categoryId: UUID): Category =
         categoryRepository.findByIdAndUserId(categoryId, userId)
             ?: throw NotFoundException("Categoría no encontrada.")
+
+    @Transactional
+    fun rename(userId: UUID, categoryId: UUID, name: String): Category {
+        val category = getOwned(userId, categoryId)
+        category.name = name.trim()
+        return categoryRepository.save(category)
+    }
+
+    @Transactional
+    fun archive(userId: UUID, categoryId: UUID): Category {
+        val category = getOwned(userId, categoryId)
+        category.status = CategoryStatus.ARCHIVED
+        return categoryRepository.save(category)
+    }
+
+    @Transactional
+    fun activate(userId: UUID, categoryId: UUID): Category {
+        val category = getOwned(userId, categoryId)
+        category.status = CategoryStatus.ACTIVE
+        return categoryRepository.save(category)
+    }
 }
