@@ -144,6 +144,11 @@ class B2FinanzasBasicasTests {
 
         assertEquals("TRANSFER", JsonPath.read(transferResponse, "$.outgoing.type"))
         assertEquals("TRANSFER", JsonPath.read(transferResponse, "$.incoming.type"))
+        // outgoing y incoming comparten el mismo "type" (TRANSFER): balanceEffect es lo único
+        // que distingue la pierna que sale de la que entra (lo que necesita un cliente para
+        // pintar el monto en rojo o en verde sin adivinar).
+        assertMoneyEquals("-300.00", BigDecimal(JsonPath.read<Any>(transferResponse, "$.outgoing.balanceEffect").toString()))
+        assertMoneyEquals("300.00", BigDecimal(JsonPath.read<Any>(transferResponse, "$.incoming.balanceEffect").toString()))
 
         assertMoneyEquals("700.00", getAccountBalance(auth, accountA))
         assertMoneyEquals("300.00", getAccountBalance(auth, accountB))

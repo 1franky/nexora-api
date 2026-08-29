@@ -52,6 +52,15 @@ data class TransactionResponse(
     val accountId: UUID,
     val type: TransactionType,
     val amount: BigDecimal,
+    /**
+     * Igual a [amount] pero con signo (positivo si aumenta el saldo de
+     * [accountId], negativo si lo disminuye). Sin este campo, un cliente no
+     * puede saber si una fila de tipo TRANSFER o CREDIT_CARD_PAYMENT es la
+     * pierna de salida o la de entrada: ambas comparten el mismo [type], y
+     * solo se diferencian por el signo interno de `balanceEffect`
+     * (ver TransactionService.recordTransfer/recordCreditCardPayment).
+     */
+    val balanceEffect: BigDecimal,
     val date: LocalDate,
     val description: String?,
     val reference: String?,
@@ -68,6 +77,7 @@ data class TransactionResponse(
             accountId = transaction.accountId,
             type = transaction.type,
             amount = transaction.amount,
+            balanceEffect = transaction.balanceEffect,
             date = transaction.date,
             description = transaction.description,
             reference = transaction.reference,
