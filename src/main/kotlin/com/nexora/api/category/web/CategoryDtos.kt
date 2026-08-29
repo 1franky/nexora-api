@@ -16,6 +16,16 @@ data class CreateCategoryRequest(
     val type: CategoryType,
 )
 
+/**
+ * Solo el nombre: el tipo no se edita una vez creada la categoría (cambiarlo
+ * dejaría movimientos ya categorizados con un tipo inconsistente con el de
+ * su categoría, sin nada que lo re-valide retroactivamente).
+ */
+data class UpdateCategoryRequest(
+    @field:NotBlank(message = "El nombre es obligatorio.")
+    val name: String,
+)
+
 data class CategoryResponse(
     val id: UUID,
     val name: String,
