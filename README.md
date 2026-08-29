@@ -103,6 +103,8 @@ Autenticación con JWT propio: esta misma API emite y valida sus tokens (no hay 
 
 `JWT_SECRET` (≥32 caracteres, ver `.env.example`) firma los tokens — cámbialo en producción, nunca uses el valor de ejemplo.
 
+**CORS**: `nexora-web` es una SPA — las peticiones salen del navegador del usuario, un origen distinto al de esta API. `CORS_ALLOWED_ORIGINS` (por defecto `http://localhost:3006`) lista los orígenes permitidos, separados por comas; en el VPS debe incluir el dominio público real de `nexora-web`. Sin esto, el navegador bloquea toda petición cross-origin desde el preflight — curl/Postman nunca lo notan porque CORS es una restricción exclusiva del navegador.
+
 RBAC más allá de un único rol (`ROLE_USER`), OAuth2/OpenID Connect con un proveedor externo, y auditoría completa (`created_by`, `audit_log`) quedan para si llegan a hacer falta (plan.md, secciones 11 y 15) — hoy no hay ningún endpoint que distinga roles. No se almacenan datos sensibles de tarjetas (CVV, NIP, número completo).
 
 ## Notificaciones
