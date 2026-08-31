@@ -38,10 +38,10 @@ class AccountService(
         return accountRepository.save(account)
     }
 
-    fun listForUser(userId: UUID): List<Account> = accountRepository.findAllByUserId(userId)
+    fun listForUser(userId: UUID): List<Account> = accountRepository.findAllByUserIdOrderByNameAsc(userId)
 
     fun listForUserByType(userId: UUID, type: AccountType): List<Account> =
-        accountRepository.findAllByUserIdAndType(userId, type)
+        accountRepository.findAllByUserIdAndTypeOrderByNameAsc(userId, type)
 
     /** Busca una cuenta y valida que pertenezca a [userId]; si no, se trata igual que "no existe". */
     fun getOwned(userId: UUID, accountId: UUID): Account =
@@ -49,7 +49,7 @@ class AccountService(
             ?: throw NotFoundException("Cuenta no encontrada.")
 
     fun getBalanceSummary(userId: UUID): BalanceSummary {
-        val accounts = accountRepository.findAllByUserId(userId)
+        val accounts = accountRepository.findAllByUserIdOrderByNameAsc(userId)
         val availableBalance = accounts
             .filter { it.includeInAvailableBalance }
             .fold(BigDecimal.ZERO) { acc, account -> acc + account.balance }
