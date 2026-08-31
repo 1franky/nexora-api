@@ -16,6 +16,7 @@ import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.time.YearMonth
 import java.util.UUID
@@ -86,9 +87,14 @@ class DashboardService(
         val expensesByCategory = groupByCategory(monthTransactions, TransactionType.EXPENSE, categoriesById)
         val incomeByCategory = groupByCategory(monthTransactions, TransactionType.INCOME, categoriesById)
 
+        // creditCardDebt/availableCredit se agregan en MXN igual que disponible/patrimonio
+        // (ver AccountService.getBalanceSummary): una tarjeta en otra moneda se convierte,
+        // no se suma tal cual. upcomingPayments sí queda en la moneda propia de cada
+        // tarjeta (expectedPayment), porque ahí se muestra junto al nombre de esa tarjeta,
+        // no agregado con las demás.
         val creditCards = creditCardService.listForUser(userId)
-        val creditCardDebt = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.currentDebt }
-        val availableCredit = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.availableCredit }
+        val creditCardDebt = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.currentDebt.toBase(c.account.currency) }
+        val availableCredit = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.availableCredit.toBase(c.account.currency) }
         val upcomingPayments = creditCards
             .filter { it.currentDebt > BigDecimal.ZERO }
             .sortedBy { it.nextPaymentDueDate }
@@ -164,10 +170,7 @@ class DashboardService(
         val laterTransactions = transactionRepository.findAllByAccountIdInAndDateAfter(accountIds, earliestCutoff)
         return cutoffs.map { (yearMonth, cutoff) ->
             val effectAfterCutoff = laterTransactions.filter { it.date > cutoff }
-                .fold(BigDecimal.ZERO) { acc, t ->
-                    val currency = currencyByAccountId[t.accountId] ?: BASE_CURRENCY
-                    acc + t.balanceEffect * exchangeRateService.rateToBase(currency)
-                }
+                .fold(BigDecimal.ZERO) { acc, t -> acc + t.balanceEffect.toBase(currencyByAccountId[t.accountId] ?: BASE_CURRENCY) }
             MonthlyPoint(yearMonth, currentNetWorth - effectAfterCutoff)
         }
     }
@@ -192,4 +195,8 @@ class DashboardService(
     }
 
     private fun List<Transaction>.sumAmount(): BigDecimal = fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+
+    /** Convierte a MXN (ver ExchangeRateService.rateToBase) con la misma precisión de dinero que el resto de la app. */
+    private fun BigDecimal.toBase(currency: String): BigDecimal =
+        (this * exchangeRateService.rateToBase(currency)).setScale(4, RoundingMode.HALF_UP)
 }
