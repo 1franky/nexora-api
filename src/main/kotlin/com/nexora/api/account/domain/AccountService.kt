@@ -1,9 +1,11 @@
 package com.nexora.api.account.domain
 
 import com.nexora.api.common.domain.NotFoundException
+import com.nexora.api.exchangerate.domain.ExchangeRateService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.util.UUID
 
 data class BalanceSummary(
@@ -14,6 +16,7 @@ data class BalanceSummary(
 @Service
 class AccountService(
     private val accountRepository: AccountRepository,
+    private val exchangeRateService: ExchangeRateService,
 ) {
 
     @Transactional
@@ -81,16 +84,24 @@ class AccountService(
         return accountRepository.save(account)
     }
 
+    /**
+     * Disponible y patrimonio se agregan siempre en MXN (moneda base de la
+     * app, ver [ExchangeRateService.rateToBase]): una cuenta en otra moneda
+     * se convierte antes de sumar, no se suma tal cual como si ya fuera MXN.
+     */
     fun getBalanceSummary(userId: UUID): BalanceSummary {
         val accounts = accountRepository.findAllByUserIdOrderByNameAsc(userId)
         val availableBalance = accounts
             .filter { it.includeInAvailableBalance }
-            .fold(BigDecimal.ZERO) { acc, account -> acc + account.balance }
+            .fold(BigDecimal.ZERO) { acc, account -> acc + convertToBase(account) }
         val netWorth = accounts
             .filter { it.includeInNetWorth }
-            .fold(BigDecimal.ZERO) { acc, account -> acc + account.balance }
+            .fold(BigDecimal.ZERO) { acc, account -> acc + convertToBase(account) }
         return BalanceSummary(availableBalance, netWorth)
     }
+
+    private fun convertToBase(account: Account): BigDecimal =
+        (account.balance * exchangeRateService.rateToBase(account.currency)).setScale(4, RoundingMode.HALF_UP)
 
     /** Ajusta el saldo de una cuenta ya cargada en la sesión actual (usado por TransactionService). */
     @Transactional
