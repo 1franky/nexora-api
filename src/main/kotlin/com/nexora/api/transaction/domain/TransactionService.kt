@@ -9,6 +9,7 @@ import com.nexora.api.category.domain.CategoryService
 import com.nexora.api.category.domain.CategoryStatus
 import com.nexora.api.category.domain.CategoryType
 import com.nexora.api.common.domain.BusinessRuleException
+import com.nexora.api.common.domain.NotFoundException
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -177,6 +178,53 @@ class TransactionService(
             categoryId = categoryId,
         )
         accountService.applyBalanceDelta(cardAccount, balanceEffect)
+        return transactionRepository.save(transaction)
+    }
+
+    /**
+     * Edita una compra de tarjeta ya registrada (monto, fecha, comercio,
+     * categoría, descripción, referencia), reajustando el saldo de la
+     * tarjeta por la diferencia. No distingue compra normal de compra a
+     * MSI/MCI — [com.nexora.api.installment.domain.InstallmentPlanService.update]
+     * es quien decide si esta compra es de un plan y, si ya tiene cuotas
+     * pagadas, restringe qué se puede tocar antes de llamar aquí.
+     */
+    @Transactional
+    fun updateCreditCardPurchase(
+        userId: UUID,
+        cardAccountId: UUID,
+        transactionId: UUID,
+        amount: BigDecimal,
+        date: LocalDate,
+        merchant: String,
+        categoryId: UUID?,
+        description: String?,
+        reference: String?,
+    ): Transaction {
+        requirePositiveAmount(amount)
+        val cardAccount = requireActiveOwnedAccount(userId, cardAccountId)
+        requireAccountType(cardAccount, AccountType.CREDIT_CARD, "La cuenta '${cardAccount.name}' no es una tarjeta de crédito.")
+        val transaction = transactionRepository.findById(transactionId)
+            .orElseThrow { NotFoundException("Movimiento no encontrado.") }
+        if (transaction.accountId != cardAccount.id || transaction.type != TransactionType.CREDIT_CARD_PURCHASE) {
+            throw NotFoundException("Movimiento no encontrado.")
+        }
+        val category = categoryId?.let { categoryService.getOwned(userId, it) }
+        if (category != null && category.type != CategoryType.EXPENSE) {
+            throw BusinessRuleException("La categoría '${category.name}' debe ser de tipo EXPENSE para usarse en una compra.")
+        }
+        if (category != null) requireActiveCategory(category)
+
+        val newBalanceEffect = amount.negate()
+        val delta = newBalanceEffect - transaction.balanceEffect
+        transaction.amount = amount
+        transaction.balanceEffect = newBalanceEffect
+        transaction.date = date
+        transaction.merchant = merchant.trim()
+        transaction.categoryId = categoryId
+        transaction.description = description?.trim()
+        transaction.reference = reference?.trim()
+        accountService.applyBalanceDelta(cardAccount, delta)
         return transactionRepository.save(transaction)
     }
 

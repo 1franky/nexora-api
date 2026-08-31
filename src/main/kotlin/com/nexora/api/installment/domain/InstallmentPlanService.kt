@@ -128,9 +128,131 @@ class InstallmentPlanService(
         return InstallmentPlanView(plan, savedInstallments)
     }
 
+    /**
+     * Usado por [com.nexora.api.creditcard.web.CreditCardController] para
+     * rechazar la edición de una compra a MSI/MCI por el endpoint de compra
+     * normal — esa debe editarse por su propio plan (ver [update]), que sabe
+     * recalcular el calendario de cuotas y respeta las ya pagadas.
+     */
+    fun isLinkedToPlan(transactionId: UUID): Boolean =
+        installmentPlanRepository.findByTransactionId(transactionId) != null
+
     fun listForCreditCard(userId: UUID, creditCardId: UUID): List<InstallmentPlanView> {
         creditCardService.getOwned(userId, creditCardId) // valida propiedad de la tarjeta
         return installmentPlanRepository.findAllByCreditCardId(creditCardId).map { toView(it) }
+    }
+
+    /**
+     * Edita un plan MSI/MCI. Si ya hay alguna cuota pagada, solo se pueden
+     * cambiar los campos cosméticos de la compra (comercio, categoría,
+     * descripción, referencia) — monto, fecha e número de cuotas deben
+     * llegar iguales a los actuales, o se rechaza. Sin cuotas pagadas, se
+     * recalcula el plan completo (interés, total, calendario) igual que al
+     * crearlo, y se regeneran sus cuotas.
+     */
+    @Transactional
+    fun update(
+        userId: UUID,
+        planId: UUID,
+        amount: BigDecimal,
+        date: LocalDate,
+        merchant: String,
+        installmentCount: Int,
+        interestRate: BigDecimal,
+        categoryId: UUID?,
+        description: String?,
+        reference: String?,
+    ): InstallmentPlanView {
+        val view = getOwned(userId, planId)
+        val plan = view.plan
+        val card = creditCardService.getOwned(userId, plan.creditCardId)
+
+        if (view.installmentsPaid > 0) {
+            val structuralChange = amount.compareTo(plan.originalAmount) != 0 ||
+                date != plan.startDate ||
+                installmentCount != plan.installmentCount ||
+                interestRate.compareTo(plan.interestRate) != 0
+            if (structuralChange) {
+                throw BusinessRuleException(
+                    "Ya hay cuotas pagadas en este plan: no se puede cambiar el monto, la fecha ni el número de " +
+                        "cuotas. Solo se pueden editar comercio, categoría, descripción y referencia."
+                )
+            }
+            transactionService.updateCreditCardPurchase(
+                userId = userId,
+                cardAccountId = card.account.id!!,
+                transactionId = plan.transactionId,
+                amount = amount,
+                date = date,
+                merchant = merchant,
+                categoryId = categoryId,
+                description = description,
+                reference = reference,
+            )
+            return InstallmentPlanView(plan, view.installments)
+        }
+
+        if (amount <= BigDecimal.ZERO) {
+            throw BusinessRuleException("El monto debe ser mayor a cero.")
+        }
+        if (installmentCount < MIN_INSTALLMENTS || installmentCount > MAX_INSTALLMENTS) {
+            throw BusinessRuleException("El número de cuotas debe estar entre $MIN_INSTALLMENTS y $MAX_INSTALLMENTS.")
+        }
+        if (interestRate < BigDecimal.ZERO) {
+            throw BusinessRuleException("La tasa de interés no puede ser negativa.")
+        }
+
+        val interestAmount = amount
+            .multiply(interestRate)
+            .divide(BigDecimal(100), 10, RoundingMode.HALF_UP)
+            .multiply(BigDecimal(installmentCount))
+            .setScale(4, RoundingMode.HALF_UP)
+        val totalAmount = amount + interestAmount
+        val planType = if (interestRate.compareTo(BigDecimal.ZERO) == 0) InstallmentPlanType.MSI else InstallmentPlanType.MCI
+
+        transactionService.updateCreditCardPurchase(
+            userId = userId,
+            cardAccountId = card.account.id!!,
+            transactionId = plan.transactionId,
+            amount = totalAmount,
+            date = date,
+            merchant = merchant,
+            categoryId = categoryId,
+            description = description,
+            reference = reference,
+        )
+
+        val firstClosing = billingCycleCalculator.closingDateOnOrAfter(card.creditCard.closingDay, date)
+        val firstDueDate = billingCycleCalculator.paymentDueDateFor(firstClosing, card.creditCard.paymentDueDay)
+        val regularAmount = totalAmount.divide(BigDecimal(installmentCount), 4, RoundingMode.DOWN)
+        val lastAmount = totalAmount - regularAmount.multiply(BigDecimal(installmentCount - 1))
+
+        plan.planType = planType
+        plan.originalAmount = amount
+        plan.installmentCount = installmentCount
+        plan.interestRate = interestRate
+        plan.interestAmount = interestAmount
+        plan.totalAmount = totalAmount
+        plan.installmentAmount = regularAmount
+        plan.startDate = date
+        plan.endDate = firstDueDate.plusMonths((installmentCount - 1).toLong())
+        installmentPlanRepository.save(plan)
+
+        // flush explícito: sin él, Hibernate puede reordenar el batch e intentar
+        // insertar las cuotas nuevas antes de que el DELETE llegue a la base,
+        // chocando con el unique (installment_plan_id, number) de las viejas.
+        installmentRepository.deleteAll(view.installments)
+        installmentRepository.flush()
+        val newInstallments = (1..installmentCount).map { number ->
+            Installment(
+                installmentPlanId = plan.id!!,
+                number = number,
+                dueDate = firstDueDate.plusMonths((number - 1).toLong()),
+                amount = if (number == installmentCount) lastAmount else regularAmount,
+            )
+        }
+        val savedInstallments = installmentRepository.saveAll(newInstallments)
+        return InstallmentPlanView(plan, savedInstallments)
     }
 
     /**

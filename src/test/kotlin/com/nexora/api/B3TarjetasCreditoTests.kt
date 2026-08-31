@@ -11,6 +11,7 @@ import com.nexora.api.support.registerAndAuthenticate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
@@ -60,6 +61,78 @@ class B3TarjetasCreditoTests {
         val card = getCreditCard(auth, cardId)
         assertMoneyEquals("8500", JsonPath.read<Any>(card, "$.currentDebt").toString())
         assertMoneyEquals("41500", JsonPath.read<Any>(card, "$.availableCredit").toString())
+    }
+
+    @Test
+    fun `editar una tarjeta cambia nombre, banco, limite y dias de corte y pago`() {
+        val auth = registerAndAuth("editartarjeta")
+        val cardId = createCreditCard(auth, creditLimit = "50000")
+
+        val response = mockMvc.perform(
+            put("/api/v1/credit-cards/$cardId")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"BBVA Oro","bank":"BBVA Bancomer","creditLimit":80000,"closingDay":20,"paymentDueDay":10}""")
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertEquals("BBVA Oro", JsonPath.read(response, "$.name"))
+        assertEquals("BBVA Bancomer", JsonPath.read(response, "$.bank"))
+        assertMoneyEquals("80000", JsonPath.read<Any>(response, "$.creditLimit").toString())
+        assertEquals(20, JsonPath.read<Int>(response, "$.closingDay"))
+        assertEquals(10, JsonPath.read<Int>(response, "$.paymentDueDay"))
+
+        // El nombre de la Account subyacente (la que se lista en /accounts) queda sincronizado.
+        val accountId = JsonPath.read<String>(response, "$.accountId")
+        val account = mockMvc.perform(get("/api/v1/accounts/$accountId").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals("BBVA Oro", JsonPath.read(account, "$.name"))
+    }
+
+    @Test
+    fun `editar una compra normal ajusta la deuda por la diferencia`() {
+        val auth = registerAndAuth("editarcompra")
+        val cardId = createCreditCard(auth, creditLimit = "50000")
+
+        val purchase = mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/purchases")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":1000,"date":"2026-08-28","merchant":"Amazon"}""")
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val transactionId = JsonPath.read<String>(purchase, "$.id")
+
+        val updated = mockMvc.perform(
+            put("/api/v1/credit-cards/$cardId/purchases/$transactionId")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":1500,"date":"2026-08-29","merchant":"Amazon Prime"}""")
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+        assertMoneyEquals("1500", JsonPath.read<Any>(updated, "$.amount").toString())
+        assertEquals("Amazon Prime", JsonPath.read(updated, "$.merchant"))
+
+        val card = getCreditCard(auth, cardId)
+        assertMoneyEquals("1500", JsonPath.read<Any>(card, "$.currentDebt").toString())
+    }
+
+    @Test
+    fun `una compra a MSI no se puede editar por el endpoint de compra normal`() {
+        val auth = registerAndAuth("editarmsibloqueado")
+        val cardId = createCreditCard(auth, creditLimit = "50000")
+
+        val plan = mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/installment-plans")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":3000,"date":"2026-08-28","merchant":"Liverpool","installmentCount":3,"interestRate":0}""")
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        val transactionId = JsonPath.read<String>(plan, "$.transactionId")
+
+        mockMvc.perform(
+            put("/api/v1/credit-cards/$cardId/purchases/$transactionId")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":4000,"date":"2026-08-28","merchant":"Liverpool"}""")
+        ).andExpect(status().isBadRequest)
     }
 
     @Test

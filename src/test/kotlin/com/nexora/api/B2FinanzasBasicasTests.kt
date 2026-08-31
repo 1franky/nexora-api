@@ -10,6 +10,7 @@ import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
@@ -65,6 +66,45 @@ class B2FinanzasBasicasTests {
         val accountId = createAccount(auth, name = "Débito BBVA", type = "DEBIT", openingBalance = "1000.00")
 
         assertMoneyEquals("1000.00", getAccountBalance(auth, accountId))
+    }
+
+    @Test
+    fun `editar una cuenta cambia nombre e inclusion en disponible y patrimonio, sin tocar el saldo`() {
+        val email = uniqueEmail("editcuenta")
+        registerUser(email)
+        val auth = bearerLogin(email, PASSWORD)
+        val accountId = createAccount(auth, name = "Débito BBVA", type = "DEBIT", openingBalance = "1000.00")
+
+        val response = mockMvc.perform(
+            put("/api/v1/accounts/$accountId")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"Débito Santander","includeInAvailableBalance":false,"includeInNetWorth":true}""")
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertEquals("Débito Santander", JsonPath.read(response, "$.name"))
+        assertEquals(false, JsonPath.read(response, "$.includeInAvailableBalance"))
+        assertEquals(true, JsonPath.read(response, "$.includeInNetWorth"))
+        assertMoneyEquals("1000.00", getAccountBalance(auth, accountId))
+    }
+
+    @Test
+    fun `un usuario no puede editar la cuenta de otro usuario`() {
+        val ownerEmail = uniqueEmail("cuentadueno")
+        registerUser(ownerEmail)
+        val ownerAuth = bearerLogin(ownerEmail, PASSWORD)
+        val accountId = createAccount(ownerAuth, name = "Débito", type = "DEBIT", openingBalance = "0")
+
+        val intruderEmail = uniqueEmail("cuentaintruso")
+        registerUser(intruderEmail)
+        val intruderAuth = bearerLogin(intruderEmail, PASSWORD)
+
+        mockMvc.perform(
+            put("/api/v1/accounts/$accountId")
+                .with(intruderAuth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"Hackeada","includeInAvailableBalance":true,"includeInNetWorth":true}""")
+        ).andExpect(status().isNotFound)
     }
 
     @Test

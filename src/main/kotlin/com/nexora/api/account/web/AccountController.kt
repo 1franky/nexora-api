@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -46,6 +47,22 @@ class AccountController(
         @AuthenticationPrincipal principal: NexoraUserDetails,
         @PathVariable id: UUID,
     ): AccountResponse = AccountResponse.from(accountService.getOwned(principal.userId, id))
+
+    @PutMapping("/{id}")
+    fun update(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @PathVariable id: UUID,
+        @Valid @RequestBody request: UpdateAccountRequest,
+    ): AccountResponse {
+        val account = accountService.update(
+            userId = principal.userId,
+            accountId = id,
+            name = request.name,
+            includeInAvailableBalance = request.includeInAvailableBalance,
+            includeInNetWorth = request.includeInNetWorth,
+        )
+        return AccountResponse.from(account)
+    }
 
     @GetMapping("/summary")
     fun summary(@AuthenticationPrincipal principal: NexoraUserDetails): BalanceSummaryResponse =

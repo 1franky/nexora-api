@@ -6,4 +6,5 @@ import java.util.UUID
 interface InstallmentPlanRepository : JpaRepository<InstallmentPlan, UUID> {
     fun findAllByCreditCardId(creditCardId: UUID): List<InstallmentPlan>
     fun findAllByCreditCardIdIn(creditCardIds: List<UUID>): List<InstallmentPlan>
+    fun findByTransactionId(transactionId: UUID): InstallmentPlan?
 }
