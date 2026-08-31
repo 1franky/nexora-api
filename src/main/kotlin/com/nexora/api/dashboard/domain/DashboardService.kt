@@ -1,9 +1,12 @@
 package com.nexora.api.dashboard.domain
 
+import com.nexora.api.account.domain.Account
 import com.nexora.api.account.domain.AccountService
 import com.nexora.api.category.domain.Category
 import com.nexora.api.category.domain.CategoryService
 import com.nexora.api.creditcard.domain.CreditCardService
+import com.nexora.api.exchangerate.domain.BASE_CURRENCY
+import com.nexora.api.exchangerate.domain.ExchangeRateService
 import com.nexora.api.installment.domain.InstallmentPlanService
 import com.nexora.api.installment.domain.InstallmentPlanType
 import com.nexora.api.transaction.domain.Transaction
@@ -63,12 +66,13 @@ class DashboardService(
     private val transactionRepository: TransactionRepository,
     private val creditCardService: CreditCardService,
     private val installmentPlanService: InstallmentPlanService,
+    private val exchangeRateService: ExchangeRateService,
 ) {
 
     fun getDashboard(userId: UUID, month: YearMonth, recentTransactionsLimit: Int): DashboardView {
         val accounts = accountService.listForUser(userId)
         val accountIds = accounts.mapNotNull { it.id }
-        val netWorthAccountIds = accounts.filter { it.includeInNetWorth }.mapNotNull { it.id }
+        val netWorthAccounts = accounts.filter { it.includeInNetWorth }
         val balanceSummary = accountService.getBalanceSummary(userId)
 
         val monthStart = month.atDay(1)
@@ -94,7 +98,7 @@ class DashboardService(
         val activeMsiPlansCount = activePlans.count { it.planType == InstallmentPlanType.MSI }
         val monthlyInstallmentCommitment = activePlans.fold(BigDecimal.ZERO) { acc, p -> acc + p.installmentAmount }
 
-        val netWorthEvolution = netWorthEvolution(netWorthAccountIds, balanceSummary.netWorth)
+        val netWorthEvolution = netWorthEvolution(netWorthAccounts, balanceSummary.netWorth)
         val expenseEvolution = expenseEvolution(accountIds)
 
         val recentTransactions = if (accountIds.isEmpty()) emptyList() else transactionRepository.findAllByAccountIdIn(
@@ -144,16 +148,26 @@ class DashboardService(
      * apertura de una cuenta no lo está), se resta a `currentNetWorth` el
      * efecto de las transacciones posteriores a cada fecha de corte —
      * matemáticamente equivalente y no depende de cuándo se creó la cuenta.
+     *
+     * `currentNetWorth` ya viene en MXN (ver AccountService.getBalanceSummary),
+     * así que cada balanceEffect que se le resta también se convierte a MXN
+     * con la moneda de su propia cuenta — si no, una cuenta en otra moneda
+     * desalinearía los puntos pasados del patrimonio actual.
      */
-    private fun netWorthEvolution(netWorthAccountIds: List<UUID>, currentNetWorth: BigDecimal): List<MonthlyPoint> {
+    private fun netWorthEvolution(netWorthAccounts: List<Account>, currentNetWorth: BigDecimal): List<MonthlyPoint> {
         val today = LocalDate.now()
         val cutoffs = monthWindow(today).map { it to minOf(it.atEndOfMonth(), today) }
-        if (netWorthAccountIds.isEmpty()) return cutoffs.map { (yearMonth, _) -> MonthlyPoint(yearMonth, BigDecimal.ZERO) }
+        if (netWorthAccounts.isEmpty()) return cutoffs.map { (yearMonth, _) -> MonthlyPoint(yearMonth, BigDecimal.ZERO) }
+        val accountIds = netWorthAccounts.mapNotNull { it.id }
+        val currencyByAccountId = netWorthAccounts.associate { it.id to it.currency }
         val earliestCutoff = cutoffs.first().second
-        val laterTransactions = transactionRepository.findAllByAccountIdInAndDateAfter(netWorthAccountIds, earliestCutoff)
+        val laterTransactions = transactionRepository.findAllByAccountIdInAndDateAfter(accountIds, earliestCutoff)
         return cutoffs.map { (yearMonth, cutoff) ->
             val effectAfterCutoff = laterTransactions.filter { it.date > cutoff }
-                .fold(BigDecimal.ZERO) { acc, t -> acc + t.balanceEffect }
+                .fold(BigDecimal.ZERO) { acc, t ->
+                    val currency = currencyByAccountId[t.accountId] ?: BASE_CURRENCY
+                    acc + t.balanceEffect * exchangeRateService.rateToBase(currency)
+                }
             MonthlyPoint(yearMonth, currentNetWorth - effectAfterCutoff)
         }
     }

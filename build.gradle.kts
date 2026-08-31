@@ -70,4 +70,8 @@ tasks.withType<Test> {
 	// tests de otros módulos; el comportamiento de 429 en sí se prueba
 	// aparte, de forma aislada (RateLimitFilterTests, sin Spring context).
 	environment("NEXORA_RATE_LIMIT_MAX_REQUESTS", "100000")
+	// Puerto sin nada escuchando: toda llamada de FrankfurterExchangeRateClient falla rápido y
+	// determinista (sin red real, sin flakiness), ejercitando el respaldo de ExchangeRateService.
+	// Los tests que necesitan una conversión ya resuelta insertan el ExchangeRate directamente.
+	environment("NEXORA_EXCHANGE_RATE_API_BASE_URL", "http://127.0.0.1:1")
 }

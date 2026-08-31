@@ -230,6 +230,77 @@ class B4MsiMciTests {
     }
 
     @Test
+    fun `pagar la tarjeta marca como pagada la cuota del mes corriente`() {
+        val auth = registerAndAuth("pagomarcacuota")
+        val cardId = createCreditCard(auth)
+        val bankAccountId = createAccount(auth, "Débito", "10000")
+        // corte 15, pago límite 5: compra el 28-ago -> cuota 1 vence 05-oct, cuota 2 05-nov, cuota 3 05-dic.
+        val plan = createPlan(auth, cardId, amount = "3000", installments = 3)
+        val planId = JsonPath.read<String>(plan, "$.id")
+
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/payments")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"fromAccountId":"$bankAccountId","amount":1000,"date":"2026-10-01"}""")
+        ).andExpect(status().isCreated)
+
+        val response = mockMvc.perform(get("/api/v1/installment-plans/$planId").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals(1, JsonPath.read<Int>(response, "$.installmentsPaid"))
+        assertEquals("PAID", JsonPath.read(response, "$.installments[0].status"))
+        assertEquals("PENDING", JsonPath.read(response, "$.installments[1].status"))
+        assertEquals("PENDING", JsonPath.read(response, "$.installments[2].status"))
+    }
+
+    @Test
+    fun `pagar la tarjeta no marca cuotas de meses futuros`() {
+        val auth = registerAndAuth("pagonomarcafuturas")
+        val cardId = createCreditCard(auth)
+        val bankAccountId = createAccount(auth, "Débito", "10000")
+        val plan = createPlan(auth, cardId, amount = "3000", installments = 3)
+        val planId = JsonPath.read<String>(plan, "$.id")
+
+        // Paga en agosto, mucho antes de la cuota de octubre: no debe marcarla.
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/payments")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"fromAccountId":"$bankAccountId","amount":1000,"date":"2026-08-29"}""")
+        ).andExpect(status().isCreated)
+
+        val response = mockMvc.perform(get("/api/v1/installment-plans/$planId").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals(0, JsonPath.read<Int>(response, "$.installmentsPaid"))
+    }
+
+    @Test
+    fun `pagar la tarjeta completa el plan si era la ultima cuota pendiente`() {
+        val auth = registerAndAuth("pagocompletaplan")
+        val cardId = createCreditCard(auth)
+        val bankAccountId = createAccount(auth, "Débito", "10000")
+        val plan = createPlan(auth, cardId, amount = "2000", installments = 2)
+        val planId = JsonPath.read<String>(plan, "$.id")
+        val firstInstallmentId = JsonPath.read<String>(plan, "$.installments[0].id")
+
+        // Cuota 1 (05-oct) ya pagada a mano; cuota 2 vence 05-nov.
+        mockMvc.perform(post("/api/v1/installment-plans/$planId/installments/$firstInstallmentId/pay").with(auth))
+            .andExpect(status().isOk)
+
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/payments")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"fromAccountId":"$bankAccountId","amount":1000,"date":"2026-11-01"}""")
+        ).andExpect(status().isCreated)
+
+        val response = mockMvc.perform(get("/api/v1/installment-plans/$planId").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals(2, JsonPath.read<Int>(response, "$.installmentsPaid"))
+        assertEquals("COMPLETED", JsonPath.read(response, "$.status"))
+    }
+
+    @Test
     fun `un usuario no puede ver el plan de otro usuario`() {
         val ownerAuth = registerAndAuth("planowner")
         val cardId = createCreditCard(ownerAuth)
@@ -260,6 +331,16 @@ class B4MsiMciTests {
     private fun getCreditCard(auth: RequestPostProcessor, cardId: String): String =
         mockMvc.perform(get("/api/v1/credit-cards/$cardId").with(auth))
             .andExpect(status().isOk).andReturn().response.contentAsString
+
+    private fun createAccount(auth: RequestPostProcessor, name: String, openingBalance: String): String {
+        val response = mockMvc.perform(
+            post("/api/v1/accounts")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"name":"$name","type":"DEBIT","currency":"MXN","openingBalance":$openingBalance}""")
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        return JsonPath.read(response, "$.id")
+    }
 
     private fun createPlan(auth: RequestPostProcessor, cardId: String, amount: String, installments: Int): String =
         mockMvc.perform(

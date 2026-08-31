@@ -37,6 +37,9 @@ springdoc:
     path: /v3/api-docs
 
 nexora:
+  exchange-rate:
+    # Frankfurter (frankfurter.dev): tipos de cambio de referencia del BCE, gratis, sin API key.
+    api-base-url: ${NEXORA_EXCHANGE_RATE_API_BASE_URL:https://api.frankfurter.dev/v1}
   jwt:
     secret: ${JWT_SECRET}
     access-token-ttl-minutes: ${JWT_ACCESS_TOKEN_TTL_MINUTES:15}

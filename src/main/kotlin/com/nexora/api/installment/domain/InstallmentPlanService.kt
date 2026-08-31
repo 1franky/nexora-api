@@ -12,6 +12,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.UUID
 
 /**
@@ -142,6 +143,51 @@ class InstallmentPlanService(
      */
     fun isLinkedToPlan(transactionId: UUID): Boolean =
         installmentPlanRepository.findByTransactionId(transactionId) != null
+
+    /**
+     * Al pagar la tarjeta (nota de producto): las cuotas MSI/MCI pendientes
+     * "del mes corriente" — con fecha límite dentro del mes de [paymentDate],
+     * o ya vencidas — quedan marcadas como pagadas, mismo efecto que
+     * [payInstallment] pero automático. Es solo seguimiento (ver
+     * [Installment]): no vuelve a mover el saldo, eso ya lo hizo el pago real.
+     *
+     * No se usa [billingCycleCalculator] aquí a propósito:
+     * `closingDateOnOrAfter` calcula el *siguiente* corte (pensado para "si
+     * compro hoy, cuándo se factura"), no el ciclo que este pago está
+     * cubriendo — con corte 15 y pago límite 5, pagar el 1 de octubre daría
+     * un corte del 15 de octubre y un límite del 5 de noviembre, un mes
+     * entero por delante de la cuota que realmente se está pagando (5 de
+     * octubre). "Fin del mes de la fecha del pago" es la aproximación simple
+     * que evita ese error.
+     */
+    @Transactional
+    fun markDueInstallmentsAsPaidByPayment(userId: UUID, creditCardId: UUID, paymentDate: LocalDate) {
+        creditCardService.getOwned(userId, creditCardId) // valida propiedad de la tarjeta
+        val cutoff = YearMonth.from(paymentDate).atEndOfMonth()
+
+        val activePlans = installmentPlanRepository.findAllByCreditCardId(creditCardId)
+            .filter { it.status == InstallmentPlanStatus.ACTIVE }
+
+        for (plan in activePlans) {
+            val installments = installmentRepository.findAllByInstallmentPlanIdOrderByNumber(plan.id!!)
+            val dueInstallments = installments.filter { it.status == InstallmentStatus.PENDING && it.dueDate <= cutoff }
+            if (dueInstallments.isEmpty()) continue
+
+            val now = Instant.now()
+            dueInstallments.forEach {
+                it.status = InstallmentStatus.PAID
+                it.paidAt = now
+            }
+            installmentRepository.saveAll(dueInstallments)
+
+            // filter() devuelve las mismas referencias, no copias: dueInstallments ya mutó
+            // los objetos dentro de installments, así que este chequeo ya ve el estado nuevo.
+            if (installments.all { it.status == InstallmentStatus.PAID }) {
+                plan.status = InstallmentPlanStatus.COMPLETED
+                installmentPlanRepository.save(plan)
+            }
+        }
+    }
 
     fun listForCreditCard(userId: UUID, creditCardId: UUID): List<InstallmentPlanView> {
         creditCardService.getOwned(userId, creditCardId) // valida propiedad de la tarjeta
