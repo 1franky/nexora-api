@@ -83,6 +83,29 @@ class ExchangeRateConversionTests {
         assertMoneyEquals("200", JsonPath.read<Any>(response, "$.netWorth").toString())
     }
 
+    @Test
+    fun `la deuda y el credito disponible del dashboard tambien se convierten a MXN`() {
+        val auth = registerAndAuth("tarjetamultimoneda")
+        // Moneda propia, distinta a la de los demás tests de esta clase (ver el comentario
+        // sobre "CAD" arriba: exchange_rates es una caché global, no aislada por test).
+        exchangeRateRepository.save(ExchangeRate(currency = "GBP", rateToBase = BigDecimal("18")))
+
+        val cardId = createCreditCard(auth, creditLimit = "1000", currency = "GBP")
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/purchases")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":100,"date":"2026-08-28","merchant":"Amazon"}""")
+        ).andExpect(status().isCreated)
+
+        val response = mockMvc.perform(get("/api/v1/dashboard").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+
+        // Deuda: 100 GBP * 18 = 1800 MXN. Disponible: (1000 - 100) GBP * 18 = 16200 MXN.
+        assertMoneyEquals("1800", JsonPath.read<Any>(response, "$.creditCardDebt").toString())
+        assertMoneyEquals("16200", JsonPath.read<Any>(response, "$.availableCredit").toString())
+    }
+
     // --- helpers ---
 
     private fun registerAndAuth(prefix: String): RequestPostProcessor = mockMvc.registerAndAuthenticate(prefix)
@@ -93,6 +116,18 @@ class ExchangeRateConversionTests {
                 .with(auth)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"name":"$name","type":"$type","currency":"$currency","openingBalance":$openingBalance}""")
+        ).andExpect(status().isCreated).andReturn().response.contentAsString
+        return JsonPath.read(response, "$.id")
+    }
+
+    private fun createCreditCard(auth: RequestPostProcessor, creditLimit: String, currency: String): String {
+        val response = mockMvc.perform(
+            post("/api/v1/credit-cards")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"name":"Tarjeta","bank":"Banco","last4":"1234","creditLimit":$creditLimit,"closingDay":15,"paymentDueDay":5,"currency":"$currency"}"""
+                )
         ).andExpect(status().isCreated).andReturn().response.contentAsString
         return JsonPath.read(response, "$.id")
     }
