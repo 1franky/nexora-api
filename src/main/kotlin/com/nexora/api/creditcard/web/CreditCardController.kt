@@ -135,6 +135,9 @@ class CreditCardController(
             description = request.description,
             reference = request.reference,
         )
+        // Nota de producto: un pago marca como pagadas las cuotas MSI/MCI pendientes
+        // del ciclo que cubre — ver InstallmentPlanService.markDueInstallmentsAsPaidByPayment.
+        installmentPlanService.markDueInstallmentsAsPaidByPayment(principal.userId, id, request.date)
         val body = TransferResponse(
             outgoing = TransactionResponse.from(result.outgoing),
             incoming = TransactionResponse.from(result.incoming),
