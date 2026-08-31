@@ -1,6 +1,8 @@
 package com.nexora.api.creditcard.web
 
+import com.nexora.api.common.domain.BusinessRuleException
 import com.nexora.api.creditcard.domain.CreditCardService
+import com.nexora.api.installment.domain.InstallmentPlanService
 import com.nexora.api.transaction.domain.TransactionService
 import com.nexora.api.transaction.web.TransactionResponse
 import com.nexora.api.transaction.web.TransferResponse
@@ -12,6 +14,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
@@ -22,6 +25,7 @@ import java.util.UUID
 class CreditCardController(
     private val creditCardService: CreditCardService,
     private val transactionService: TransactionService,
+    private val installmentPlanService: InstallmentPlanService,
 ) {
 
     @PostMapping
@@ -52,6 +56,24 @@ class CreditCardController(
         @PathVariable id: UUID,
     ): CreditCardResponse = CreditCardResponse.from(creditCardService.getOwned(principal.userId, id))
 
+    @PutMapping("/{id}")
+    fun update(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @PathVariable id: UUID,
+        @Valid @RequestBody request: UpdateCreditCardRequest,
+    ): CreditCardResponse {
+        val view = creditCardService.update(
+            userId = principal.userId,
+            creditCardId = id,
+            name = request.name,
+            bank = request.bank,
+            creditLimit = request.creditLimit,
+            closingDay = request.closingDay,
+            paymentDueDay = request.paymentDueDay,
+        )
+        return CreditCardResponse.from(view)
+    }
+
     @PostMapping("/{id}/purchases")
     fun purchase(
         @AuthenticationPrincipal principal: NexoraUserDetails,
@@ -70,6 +92,31 @@ class CreditCardController(
             reference = request.reference,
         )
         return ResponseEntity.status(HttpStatus.CREATED).body(TransactionResponse.from(transaction))
+    }
+
+    @PutMapping("/{id}/purchases/{transactionId}")
+    fun updatePurchase(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @PathVariable id: UUID,
+        @PathVariable transactionId: UUID,
+        @Valid @RequestBody request: UpdateCreditCardPurchaseRequest,
+    ): TransactionResponse {
+        val card = creditCardService.getOwned(principal.userId, id) // valida propiedad de la tarjeta
+        if (installmentPlanService.isLinkedToPlan(transactionId)) {
+            throw BusinessRuleException("Esta compra es a MSI/MCI: edítala desde su plan de meses, no aquí.")
+        }
+        val transaction = transactionService.updateCreditCardPurchase(
+            userId = principal.userId,
+            cardAccountId = card.account.id!!,
+            transactionId = transactionId,
+            amount = request.amount,
+            date = request.date,
+            merchant = request.merchant,
+            categoryId = request.categoryId,
+            description = request.description,
+            reference = request.reference,
+        )
+        return TransactionResponse.from(transaction)
     }
 
     @PostMapping("/{id}/payments")

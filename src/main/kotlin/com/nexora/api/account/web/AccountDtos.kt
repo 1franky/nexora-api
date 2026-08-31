@@ -30,6 +30,14 @@ data class CreateAccountRequest(
     val includeInNetWorth: Boolean = true,
 )
 
+data class UpdateAccountRequest(
+    @field:NotBlank(message = "El nombre es obligatorio.")
+    val name: String,
+
+    val includeInAvailableBalance: Boolean,
+    val includeInNetWorth: Boolean,
+)
+
 data class AccountResponse(
     val id: UUID,
     val name: String,

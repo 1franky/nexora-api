@@ -48,6 +48,39 @@ class AccountService(
         accountRepository.findByIdAndUserId(accountId, userId)
             ?: throw NotFoundException("Cuenta no encontrada.")
 
+    /**
+     * Edita nombre e inclusión en disponible/patrimonio. Tipo, moneda y saldo
+     * quedan fuera a propósito: cambiarlos rompería el significado del
+     * historial de movimientos ya registrados sobre esta cuenta.
+     */
+    @Transactional
+    fun update(
+        userId: UUID,
+        accountId: UUID,
+        name: String,
+        includeInAvailableBalance: Boolean,
+        includeInNetWorth: Boolean,
+    ): Account {
+        val account = getOwned(userId, accountId)
+        account.name = name.trim()
+        account.includeInAvailableBalance = includeInAvailableBalance
+        account.includeInNetWorth = includeInNetWorth
+        return accountRepository.save(account)
+    }
+
+    /**
+     * Solo el nombre — usado por [com.nexora.api.creditcard.domain.CreditCardService.update]
+     * para mantener sincronizado el nombre de la Account subyacente de una
+     * tarjeta sin tocar includeInAvailableBalance/includeInNetWorth (esos no
+     * son editables para una cuenta de tipo CREDIT_CARD, los fija B3 al crearla).
+     */
+    @Transactional
+    fun rename(userId: UUID, accountId: UUID, name: String): Account {
+        val account = getOwned(userId, accountId)
+        account.name = name.trim()
+        return accountRepository.save(account)
+    }
+
     fun getBalanceSummary(userId: UUID): BalanceSummary {
         val accounts = accountRepository.findAllByUserIdOrderByNameAsc(userId)
         val availableBalance = accounts

@@ -40,6 +40,30 @@ data class CreateInstallmentPlanRequest(
     val reference: String? = null,
 )
 
+data class UpdateInstallmentPlanRequest(
+    @field:NotNull(message = "El monto es obligatorio.")
+    @field:DecimalMin(value = "0.0", inclusive = false, message = "El monto debe ser mayor a cero.")
+    val amount: BigDecimal,
+
+    @field:NotNull(message = "La fecha es obligatoria.")
+    val date: LocalDate,
+
+    @field:NotBlank(message = "El comercio es obligatorio.")
+    val merchant: String,
+
+    @field:NotNull(message = "El número de cuotas es obligatorio.")
+    @field:Min(2, message = "Debe haber al menos 2 cuotas (una compra de 1 sola exhibición se registra como compra normal).")
+    @field:Max(60)
+    val installmentCount: Int,
+
+    @field:DecimalMin(value = "0.0", message = "La tasa de interés no puede ser negativa.")
+    val interestRate: BigDecimal = BigDecimal.ZERO,
+
+    val categoryId: UUID? = null,
+    val description: String? = null,
+    val reference: String? = null,
+)
+
 data class InstallmentResponse(
     val id: UUID,
     val number: Int,
@@ -79,6 +103,11 @@ data class InstallmentPlanResponse(
     val financedBalance: BigDecimal,
     val nextInstallment: InstallmentResponse?,
     val installments: List<InstallmentResponse>,
+    /** De la Transaction de la compra original — no viven en el plan, pero hacen falta para poder editarlo. */
+    val merchant: String?,
+    val categoryId: UUID?,
+    val description: String?,
+    val reference: String?,
 ) {
     companion object {
         fun from(view: InstallmentPlanView): InstallmentPlanResponse {
@@ -102,6 +131,10 @@ data class InstallmentPlanResponse(
                 financedBalance = view.financedBalance,
                 nextInstallment = view.nextInstallment?.let(InstallmentResponse::from),
                 installments = view.installments.map(InstallmentResponse::from),
+                merchant = view.transaction.merchant,
+                categoryId = view.transaction.categoryId,
+                description = view.transaction.description,
+                reference = view.transaction.reference,
             )
         }
     }

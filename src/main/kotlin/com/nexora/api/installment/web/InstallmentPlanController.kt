@@ -9,6 +9,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
@@ -56,6 +57,27 @@ class InstallmentPlanController(
         @AuthenticationPrincipal principal: NexoraUserDetails,
         @PathVariable id: UUID,
     ): InstallmentPlanResponse = InstallmentPlanResponse.from(installmentPlanService.getOwned(principal.userId, id))
+
+    @PutMapping("/api/v1/installment-plans/{id}")
+    fun update(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @PathVariable id: UUID,
+        @Valid @RequestBody request: UpdateInstallmentPlanRequest,
+    ): InstallmentPlanResponse {
+        val view = installmentPlanService.update(
+            userId = principal.userId,
+            planId = id,
+            amount = request.amount,
+            date = request.date,
+            merchant = request.merchant,
+            installmentCount = request.installmentCount,
+            interestRate = request.interestRate,
+            categoryId = request.categoryId,
+            description = request.description,
+            reference = request.reference,
+        )
+        return InstallmentPlanResponse.from(view)
+    }
 
     @PostMapping("/api/v1/installment-plans/{id}/installments/{installmentId}/pay")
     fun payInstallment(

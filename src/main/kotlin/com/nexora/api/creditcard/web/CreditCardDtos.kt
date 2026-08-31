@@ -40,6 +40,26 @@ data class CreateCreditCardRequest(
     val currency: String,
 )
 
+data class UpdateCreditCardRequest(
+    @field:NotBlank(message = "El nombre es obligatorio.")
+    val name: String,
+
+    @field:NotBlank(message = "El banco es obligatorio.")
+    val bank: String,
+
+    @field:NotNull(message = "El límite de crédito es obligatorio.")
+    @field:DecimalMin(value = "0.0", inclusive = false, message = "El límite de crédito debe ser mayor a cero.")
+    val creditLimit: BigDecimal,
+
+    @field:NotNull(message = "El día de corte es obligatorio.")
+    @field:Min(1) @field:Max(28)
+    val closingDay: Int,
+
+    @field:NotNull(message = "El día límite de pago es obligatorio.")
+    @field:Min(1) @field:Max(28)
+    val paymentDueDay: Int,
+)
+
 data class CreditCardResponse(
     val id: UUID,
     val accountId: UUID,
@@ -75,6 +95,22 @@ data class CreditCardResponse(
         )
     }
 }
+
+data class UpdateCreditCardPurchaseRequest(
+    @field:NotNull(message = "El monto es obligatorio.")
+    @field:DecimalMin(value = "0.0", inclusive = false, message = "El monto debe ser mayor a cero.")
+    val amount: BigDecimal,
+
+    @field:NotNull(message = "La fecha es obligatoria.")
+    val date: LocalDate,
+
+    @field:NotBlank(message = "El comercio es obligatorio.")
+    val merchant: String,
+
+    val categoryId: UUID? = null,
+    val description: String? = null,
+    val reference: String? = null,
+)
 
 data class CreditCardPurchaseRequest(
     @field:NotNull(message = "El monto es obligatorio.")

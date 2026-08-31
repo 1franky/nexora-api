@@ -11,6 +11,7 @@ import com.nexora.api.support.registerAndAuthenticate
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
@@ -150,6 +151,82 @@ class B4MsiMciTests {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""{"amount":1000,"date":"2026-08-28","merchant":"Tienda","installmentCount":1,"interestRate":0}""")
         ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `editar un plan sin cuotas pagadas recalcula el total y regenera las cuotas`() {
+        val auth = registerAndAuth("editarplan")
+        val cardId = createCreditCard(auth)
+        val plan = createPlan(auth, cardId, amount = "3000", installments = 3)
+        val planId = JsonPath.read<String>(plan, "$.id")
+
+        val updated = mockMvc.perform(
+            put("/api/v1/installment-plans/$planId")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"amount":6000,"date":"2026-08-28","merchant":"Tienda Nueva","installmentCount":6,"interestRate":0}"""
+                )
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertMoneyEquals("6000", JsonPath.read<Any>(updated, "$.totalAmount").toString())
+        assertMoneyEquals("1000", JsonPath.read<Any>(updated, "$.installmentAmount").toString())
+        assertEquals(6, JsonPath.read(updated, "$.installments.length()"))
+        assertEquals(0, JsonPath.read<Int>(updated, "$.installmentsPaid"))
+
+        val card = getCreditCard(auth, cardId)
+        assertMoneyEquals("6000", JsonPath.read<Any>(card, "$.currentDebt").toString())
+    }
+
+    @Test
+    fun `editar un plan con cuotas pagadas rechaza cambiar monto o cuotas`() {
+        val auth = registerAndAuth("editarplanpagado")
+        val cardId = createCreditCard(auth)
+        val plan = createPlan(auth, cardId, amount = "3000", installments = 3)
+        val planId = JsonPath.read<String>(plan, "$.id")
+        val firstInstallmentId = JsonPath.read<String>(plan, "$.installments[0].id")
+
+        mockMvc.perform(post("/api/v1/installment-plans/$planId/installments/$firstInstallmentId/pay").with(auth))
+            .andExpect(status().isOk)
+
+        mockMvc.perform(
+            put("/api/v1/installment-plans/$planId")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"amount":9000,"date":"2026-08-28","merchant":"Tienda","installmentCount":3,"interestRate":0}"""
+                )
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
+    fun `editar un plan con cuotas pagadas permite cambiar comercio y categoria`() {
+        val auth = registerAndAuth("editarplancosmetico")
+        val cardId = createCreditCard(auth)
+        val plan = createPlan(auth, cardId, amount = "3000", installments = 3)
+        val planId = JsonPath.read<String>(plan, "$.id")
+        val firstInstallmentId = JsonPath.read<String>(plan, "$.installments[0].id")
+
+        mockMvc.perform(post("/api/v1/installment-plans/$planId/installments/$firstInstallmentId/pay").with(auth))
+            .andExpect(status().isOk)
+
+        val updated = mockMvc.perform(
+            put("/api/v1/installment-plans/$planId")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(
+                    """{"amount":3000,"date":"2026-08-28","merchant":"Tienda Renombrada","installmentCount":3,"interestRate":0}"""
+                )
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertEquals(1, JsonPath.read<Int>(updated, "$.installmentsPaid"))
+        assertMoneyEquals("3000", JsonPath.read<Any>(updated, "$.totalAmount").toString())
+
+        // El comercio sí se actualizó, en la Transaction original de la compra.
+        val accountId = JsonPath.read<String>(getCreditCard(auth, cardId), "$.accountId")
+        val transactions = mockMvc.perform(get("/api/v1/transactions?accountId=$accountId").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals("Tienda Renombrada", JsonPath.read(transactions, "$[0].merchant"))
     }
 
     @Test

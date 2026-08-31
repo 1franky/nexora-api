@@ -67,6 +67,38 @@ class CreditCardService(
         return toView(creditCardRepository.save(creditCard), account)
     }
 
+    /**
+     * Edita nombre, banco, límite de crédito y días de corte/pago. No cambia
+     * los planes MSI/MCI ya generados: sus cuotas quedan con las fechas
+     * calculadas al momento de la compra (igual que un estado de cuenta real
+     * no reescribe fechas pasadas si el banco te cambia el día de corte).
+     */
+    @Transactional
+    fun update(
+        userId: UUID,
+        creditCardId: UUID,
+        name: String,
+        bank: String,
+        creditLimit: BigDecimal,
+        closingDay: Int,
+        paymentDueDay: Int,
+    ): CreditCardView {
+        require(closingDay in 1..28) { "El día de corte debe estar entre 1 y 28." }
+        require(paymentDueDay in 1..28) { "El día límite de pago debe estar entre 1 y 28." }
+
+        val view = getOwned(userId, creditCardId)
+        val creditCard = view.creditCard
+        creditCard.name = name.trim()
+        creditCard.bank = bank.trim()
+        creditCard.creditLimit = creditLimit
+        creditCard.closingDay = closingDay
+        creditCard.paymentDueDay = paymentDueDay
+        creditCardRepository.save(creditCard)
+
+        val account = accountService.rename(userId, view.account.id!!, name)
+        return toView(creditCard, account)
+    }
+
     fun listForUser(userId: UUID): List<CreditCardView> {
         val cardAccounts = accountService.listForUserByType(userId, AccountType.CREDIT_CARD)
         val cardsByAccountId = creditCardRepository.findAllByAccountIdIn(cardAccounts.mapNotNull { it.id })
