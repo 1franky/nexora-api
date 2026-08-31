@@ -4,6 +4,7 @@ import com.nexora.api.common.domain.BusinessRuleException
 import com.nexora.api.common.domain.NotFoundException
 import com.nexora.api.creditcard.domain.BillingCycleCalculator
 import com.nexora.api.creditcard.domain.CreditCardService
+import com.nexora.api.transaction.domain.Transaction
 import com.nexora.api.transaction.domain.TransactionService
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -13,10 +14,15 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
 
-/** Vista de un plan con sus cuotas y los valores calculados (plan.md, sección 6.3). */
+/**
+ * Vista de un plan con sus cuotas, los valores calculados (plan.md, sección
+ * 6.3) y la Transaction de la compra original — de ahí salen comercio,
+ * categoría, descripción y referencia, que no viven en el plan.
+ */
 data class InstallmentPlanView(
     val plan: InstallmentPlan,
     val installments: List<Installment>,
+    val transaction: Transaction,
 ) {
     val installmentsPaid: Int get() = installments.count { it.status == InstallmentStatus.PAID }
     val installmentsPending: Int get() = installments.count { it.status == InstallmentStatus.PENDING }
@@ -125,7 +131,7 @@ class InstallmentPlanService(
         }
         val savedInstallments = installmentRepository.saveAll(installments)
 
-        return InstallmentPlanView(plan, savedInstallments)
+        return InstallmentPlanView(plan, savedInstallments, purchase)
     }
 
     /**
@@ -178,7 +184,7 @@ class InstallmentPlanService(
                         "cuotas. Solo se pueden editar comercio, categoría, descripción y referencia."
                 )
             }
-            transactionService.updateCreditCardPurchase(
+            val transaction = transactionService.updateCreditCardPurchase(
                 userId = userId,
                 cardAccountId = card.account.id!!,
                 transactionId = plan.transactionId,
@@ -189,7 +195,7 @@ class InstallmentPlanService(
                 description = description,
                 reference = reference,
             )
-            return InstallmentPlanView(plan, view.installments)
+            return InstallmentPlanView(plan, view.installments, transaction)
         }
 
         if (amount <= BigDecimal.ZERO) {
@@ -210,7 +216,7 @@ class InstallmentPlanService(
         val totalAmount = amount + interestAmount
         val planType = if (interestRate.compareTo(BigDecimal.ZERO) == 0) InstallmentPlanType.MSI else InstallmentPlanType.MCI
 
-        transactionService.updateCreditCardPurchase(
+        val transaction = transactionService.updateCreditCardPurchase(
             userId = userId,
             cardAccountId = card.account.id!!,
             transactionId = plan.transactionId,
@@ -252,7 +258,7 @@ class InstallmentPlanService(
             )
         }
         val savedInstallments = installmentRepository.saveAll(newInstallments)
-        return InstallmentPlanView(plan, savedInstallments)
+        return InstallmentPlanView(plan, savedInstallments, transaction)
     }
 
     /**
@@ -291,9 +297,13 @@ class InstallmentPlanService(
             view.plan.status = InstallmentPlanStatus.COMPLETED
             installmentPlanRepository.save(view.plan)
         }
-        return InstallmentPlanView(view.plan, updatedInstallments)
+        return InstallmentPlanView(view.plan, updatedInstallments, view.transaction)
     }
 
-    private fun toView(plan: InstallmentPlan): InstallmentPlanView =
-        InstallmentPlanView(plan, installmentRepository.findAllByInstallmentPlanIdOrderByNumber(plan.id!!))
+    private fun toView(plan: InstallmentPlan): InstallmentPlanView {
+        val transaction = requireNotNull(transactionService.getById(plan.transactionId)) {
+            "Transacción de la compra original del plan no encontrada (id=${plan.transactionId})."
+        }
+        return InstallmentPlanView(plan, installmentRepository.findAllByInstallmentPlanIdOrderByNumber(plan.id!!), transaction)
+    }
 }

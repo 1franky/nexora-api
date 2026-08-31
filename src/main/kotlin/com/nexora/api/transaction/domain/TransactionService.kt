@@ -292,6 +292,14 @@ class TransactionService(
      * cuenta antes de poder ver los movimientos (issue de nexora-web sobre
      * el filtro de Movimientos).
      */
+    /**
+     * Lectura directa por id, sin validar propiedad — usada por
+     * [com.nexora.api.installment.domain.InstallmentPlanService], que ya
+     * valida la propiedad del plan (y por lo tanto de esta transacción) por
+     * su propia cadena plan -> tarjeta -> cuenta antes de llamar aquí.
+     */
+    fun getById(id: UUID): Transaction? = transactionRepository.findById(id).orElse(null)
+
     fun listForUser(userId: UUID, accountId: UUID?): List<Transaction> {
         val sort = Sort.by(Sort.Direction.DESC, "date", "createdAt")
         if (accountId != null) {

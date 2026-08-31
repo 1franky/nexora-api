@@ -103,6 +103,11 @@ data class InstallmentPlanResponse(
     val financedBalance: BigDecimal,
     val nextInstallment: InstallmentResponse?,
     val installments: List<InstallmentResponse>,
+    /** De la Transaction de la compra original — no viven en el plan, pero hacen falta para poder editarlo. */
+    val merchant: String?,
+    val categoryId: UUID?,
+    val description: String?,
+    val reference: String?,
 ) {
     companion object {
         fun from(view: InstallmentPlanView): InstallmentPlanResponse {
@@ -126,6 +131,10 @@ data class InstallmentPlanResponse(
                 financedBalance = view.financedBalance,
                 nextInstallment = view.nextInstallment?.let(InstallmentResponse::from),
                 installments = view.installments.map(InstallmentResponse::from),
+                merchant = view.transaction.merchant,
+                categoryId = view.transaction.categoryId,
+                description = view.transaction.description,
+                reference = view.transaction.reference,
             )
         }
     }
