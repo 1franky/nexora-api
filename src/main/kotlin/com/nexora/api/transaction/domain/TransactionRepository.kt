@@ -12,4 +12,7 @@ interface TransactionRepository : JpaRepository<Transaction, UUID> {
     fun findAllByAccountIdIn(accountIds: List<UUID>, pageable: Pageable): List<Transaction>
     fun findAllByAccountIdInAndDateBetween(accountIds: List<UUID>, start: LocalDate, end: LocalDate): List<Transaction>
     fun findAllByAccountIdInAndDateAfter(accountIds: List<UUID>, date: LocalDate): List<Transaction>
+
+    /** Las dos filas (salida/entrada) de una transferencia o un pago de tarjeta — ver [Transaction.transferGroupId]. */
+    fun findAllByTransferGroupId(transferGroupId: UUID): List<Transaction>
 }

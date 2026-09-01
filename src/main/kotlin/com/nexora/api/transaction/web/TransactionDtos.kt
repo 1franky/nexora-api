@@ -29,6 +29,19 @@ data class CreateTransactionRequest(
     val reference: String? = null,
 )
 
+data class UpdateTransactionRequest(
+    @field:NotNull(message = "El monto es obligatorio.")
+    @field:DecimalMin(value = "0.0", inclusive = false, message = "El monto debe ser mayor a cero.")
+    val amount: BigDecimal,
+
+    @field:NotNull(message = "La fecha es obligatoria.")
+    val date: LocalDate,
+
+    val categoryId: UUID? = null,
+    val description: String? = null,
+    val reference: String? = null,
+)
+
 data class CreateTransferRequest(
     @field:NotNull(message = "La cuenta origen es obligatoria.")
     val fromAccountId: UUID,
