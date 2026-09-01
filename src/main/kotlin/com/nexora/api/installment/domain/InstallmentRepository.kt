@@ -13,4 +13,6 @@ interface InstallmentRepository : JpaRepository<Installment, UUID> {
         start: LocalDate,
         end: LocalDate,
     ): List<Installment>
+
+    fun findAllByInstallmentPlanIdInAndStatus(installmentPlanIds: List<UUID>, status: InstallmentStatus): List<Installment>
 }

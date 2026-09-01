@@ -95,10 +95,23 @@ class DashboardService(
         val creditCards = creditCardService.listForUser(userId)
         val creditCardDebt = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.currentDebt.toBase(c.account.currency) }
         val availableCredit = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.availableCredit.toBase(c.account.currency) }
+        // currentDebt es la deuda total de la tarjeta (una compra a MSI/MCI se registra por su
+        // monto completo desde el día 1, ver InstallmentPlanService.create), no lo que toca pagar
+        // en el próximo corte: a una compra de $12,000 a 12 MSI solo le corresponde $1,000 este
+        // corte, no los $12,000. Se descuentan las cuotas PENDING cuya fecha límite es posterior
+        // al próximo pago de la tarjeta (las que aún no le toca pagar) de currentDebt.
+        val pendingInstallmentsByCard = installmentPlanService.pendingInstallmentsByCard(userId)
         val upcomingPayments = creditCards
             .filter { it.currentDebt > BigDecimal.ZERO }
             .sortedBy { it.nextPaymentDueDate }
-            .map { UpcomingCardPayment(requireNotNull(it.creditCard.id), it.creditCard.name, it.nextPaymentDueDate, it.currentDebt) }
+            .map { card ->
+                val futureInstallments = pendingInstallmentsByCard[card.creditCard.id]
+                    ?.filter { it.dueDate > card.nextPaymentDueDate }
+                    ?.fold(BigDecimal.ZERO) { acc, i -> acc + i.amount }
+                    ?: BigDecimal.ZERO
+                val expectedPayment = (card.currentDebt - futureInstallments).max(BigDecimal.ZERO)
+                UpcomingCardPayment(requireNotNull(card.creditCard.id), card.creditCard.name, card.nextPaymentDueDate, expectedPayment)
+            }
 
         val activePlans = installmentPlanService.listActivePlansForUser(userId)
         val activeMsiPlansCount = activePlans.count { it.planType == InstallmentPlanType.MSI }
