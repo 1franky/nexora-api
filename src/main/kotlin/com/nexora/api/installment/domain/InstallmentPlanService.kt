@@ -318,6 +318,25 @@ class InstallmentPlanService(
             .filter { it.status == InstallmentPlanStatus.ACTIVE }
     }
 
+    /**
+     * Cuotas PENDING de los planes ACTIVE de cada tarjeta, agrupadas por
+     * `creditCardId` — usado por el dashboard para calcular cuánto de la
+     * deuda total de cada tarjeta corresponde en realidad al próximo pago
+     * (ver DashboardService.upcomingPayments). `CreditCardView.currentDebt`
+     * incluye el financiamiento completo de los planes MSI/MCI desde el
+     * día 1 (la compra se registra por el total, no cuota a cuota — ver
+     * [create]), así que no sirve tal cual como "lo que toca pagar este
+     * corte": una compra de $12,000 a 12 MSI debe mostrar $1,000 de próximo
+     * pago, no los $12,000 completos.
+     */
+    fun pendingInstallmentsByCard(userId: UUID): Map<UUID, List<Installment>> {
+        val plans = listActivePlansForUser(userId)
+        if (plans.isEmpty()) return emptyMap()
+        val cardIdByPlanId = plans.associate { requireNotNull(it.id) to it.creditCardId }
+        val pending = installmentRepository.findAllByInstallmentPlanIdInAndStatus(cardIdByPlanId.keys.toList(), InstallmentStatus.PENDING)
+        return pending.groupBy { cardIdByPlanId.getValue(it.installmentPlanId) }
+    }
+
     /** Busca un plan y valida que su tarjeta pertenezca a [userId]; si no, se trata igual que "no existe". */
     fun getOwned(userId: UUID, planId: UUID): InstallmentPlanView {
         val plan = installmentPlanRepository.findById(planId)

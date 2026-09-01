@@ -103,6 +103,51 @@ class B5DashboardTests {
     }
 
     @Test
+    fun `el proximo pago de una compra a MSI es solo la cuota del corte actual, no la deuda total`() {
+        val auth = registerAndAuth("proximopagomsi")
+        val cardId = createCreditCard(auth)
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/installment-plans")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":12000,"date":"$today","merchant":"Liverpool","installmentCount":12,"interestRate":0}""")
+        ).andExpect(status().isCreated)
+
+        val response = mockMvc.perform(get("/api/v1/dashboard").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+
+        // La compra se registra por el total ($12,000) desde el día 1 (currentDebt/creditCardDebt
+        // sí reflejan eso), pero el próximo pago es solo la cuota que corresponde a este corte.
+        assertMoneyEquals("12000", JsonPath.read<Any>(response, "$.creditCardDebt").toString())
+        assertEquals(1, JsonPath.read<Int>(response, "$.upcomingPayments.length()"))
+        assertMoneyEquals("1000", JsonPath.read<Any>(response, "$.upcomingPayments[0].expectedPayment").toString())
+    }
+
+    @Test
+    fun `el proximo pago suma una compra normal y la cuota del corte de un plan MSI en la misma tarjeta`() {
+        val auth = registerAndAuth("proximopagomixto")
+        val cardId = createCreditCard(auth)
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/purchases")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":500,"date":"$today","merchant":"OXXO"}""")
+        ).andExpect(status().isCreated)
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/installment-plans")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":12000,"date":"$today","merchant":"Liverpool","installmentCount":12,"interestRate":0}""")
+        ).andExpect(status().isCreated)
+
+        val response = mockMvc.perform(get("/api/v1/dashboard").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertMoneyEquals("12500", JsonPath.read<Any>(response, "$.creditCardDebt").toString())
+        assertMoneyEquals("1500", JsonPath.read<Any>(response, "$.upcomingPayments[0].expectedPayment").toString())
+    }
+
+    @Test
     fun `un plan MSI activo se refleja en el compromiso mensual`() {
         val auth = registerAndAuth("msidash")
         val cardId = createCreditCard(auth)
