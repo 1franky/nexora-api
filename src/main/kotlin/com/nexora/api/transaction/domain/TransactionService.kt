@@ -251,6 +251,11 @@ class TransactionService(
         if (fromAccount.type == AccountType.CREDIT_CARD) {
             throw BusinessRuleException("No se puede pagar una tarjeta de crédito con otra tarjeta de crédito.")
         }
+        // AFORE/PPR son cuentas de retiro, no de uso corriente: no tiene sentido pagar una
+        // tarjeta desde ahí (nexora-web/nexora-android ya las ocultan del selector "cuenta origen").
+        if (fromAccount.type == AccountType.AFORE || fromAccount.type == AccountType.PPR) {
+            throw BusinessRuleException("No se puede pagar una tarjeta de crédito desde una cuenta de tipo ${fromAccount.type}.")
+        }
 
         val transferGroupId = UUID.randomUUID()
 
@@ -283,6 +288,93 @@ class TransactionService(
         val savedOutgoing = transactionRepository.save(outgoing)
         val savedIncoming = transactionRepository.save(incoming)
         return TransferResult(savedOutgoing, savedIncoming)
+    }
+
+    /**
+     * Edita un movimiento simple (INCOME/EXPENSE) ya registrado, reajustando
+     * el saldo de su cuenta por la diferencia. Transferencias y movimientos
+     * de tarjeta no se editan por aquí: una transferencia tiene dos piernas
+     * que deben mantenerse en espejo, y una compra de tarjeta ya tiene su
+     * propio endpoint ([updateCreditCardPurchase]) que sabe de planes MSI/MCI.
+     */
+    @Transactional
+    fun updateSimple(
+        userId: UUID,
+        transactionId: UUID,
+        amount: BigDecimal,
+        date: LocalDate,
+        categoryId: UUID?,
+        description: String?,
+        reference: String?,
+    ): Transaction {
+        requirePositiveAmount(amount)
+        val transaction = transactionRepository.findById(transactionId)
+            .orElseThrow { NotFoundException("Movimiento no encontrado.") }
+        val account = accountService.getOwned(userId, transaction.accountId)
+        if (transaction.type != TransactionType.INCOME && transaction.type != TransactionType.EXPENSE) {
+            throw BusinessRuleException("Este movimiento no se puede editar desde aquí.")
+        }
+        val category = categoryId?.let { categoryService.getOwned(userId, it) }
+        if (category != null) {
+            val expectedCategoryType = if (transaction.type == TransactionType.INCOME) CategoryType.INCOME else CategoryType.EXPENSE
+            if (category.type != expectedCategoryType) {
+                throw BusinessRuleException(
+                    "La categoría '${category.name}' es de tipo ${category.type}, no se puede usar en un movimiento de tipo ${transaction.type}."
+                )
+            }
+            requireActiveCategory(category)
+        }
+
+        val newBalanceEffect = if (transaction.type == TransactionType.INCOME) amount else amount.negate()
+        val delta = newBalanceEffect - transaction.balanceEffect
+        transaction.amount = amount
+        transaction.balanceEffect = newBalanceEffect
+        transaction.date = date
+        transaction.categoryId = categoryId
+        transaction.description = description?.trim()
+        transaction.reference = reference?.trim()
+        accountService.applyBalanceDelta(account, delta)
+        return transactionRepository.save(transaction)
+    }
+
+    /**
+     * Borra un movimiento, revirtiendo su efecto en el/los saldo(s)
+     * involucrados. TRANSFER borra las dos piernas juntas (nunca una sola,
+     * se rompería el balance entre las dos cuentas). CREDIT_CARD_PAYMENT no
+     * se borra por aquí: revertirlo implicaría des-marcar como pagadas las
+     * cuotas MSI/MCI que ese pago haya marcado
+     * ([com.nexora.api.installment.domain.InstallmentPlanService.markDueInstallmentsAsPaidByPayment]),
+     * y no hay forma segura de saber cuáles eran "ya pagadas antes" vs.
+     * "marcadas por este pago" sin guardar más historial del que existe hoy.
+     * Si [transactionId] es una compra de tarjeta ligada a un plan MSI/MCI,
+     * el llamador (TransactionController) es quien lo valida antes de
+     * llegar aquí, igual que ya hace [com.nexora.api.creditcard.web.CreditCardController]
+     * para editar una compra — evita una dependencia circular entre
+     * TransactionService e InstallmentPlanService.
+     */
+    @Transactional
+    fun delete(userId: UUID, transactionId: UUID) {
+        val transaction = transactionRepository.findById(transactionId)
+            .orElseThrow { NotFoundException("Movimiento no encontrado.") }
+        val account = accountService.getOwned(userId, transaction.accountId)
+        when (transaction.type) {
+            TransactionType.INCOME, TransactionType.EXPENSE, TransactionType.CREDIT_CARD_PURCHASE -> {
+                accountService.applyBalanceDelta(account, transaction.balanceEffect.negate())
+                transactionRepository.delete(transaction)
+            }
+
+            TransactionType.TRANSFER -> {
+                val groupId = transaction.transferGroupId ?: throw NotFoundException("Movimiento no encontrado.")
+                val legs = transactionRepository.findAllByTransferGroupId(groupId)
+                legs.forEach { leg ->
+                    val legAccount = accountService.getOwned(userId, leg.accountId)
+                    accountService.applyBalanceDelta(legAccount, leg.balanceEffect.negate())
+                }
+                transactionRepository.deleteAll(legs)
+            }
+
+            else -> throw BusinessRuleException("Este movimiento no se puede borrar desde aquí.")
+        }
     }
 
     /**

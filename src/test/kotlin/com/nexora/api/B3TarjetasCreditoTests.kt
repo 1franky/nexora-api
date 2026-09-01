@@ -182,6 +182,20 @@ class B3TarjetasCreditoTests {
     }
 
     @Test
+    fun `no se puede pagar una tarjeta desde una cuenta AFORE o PPR`() {
+        val auth = registerAndAuth("noaforeppr")
+        val cardId = createCreditCard(auth, creditLimit = "50000")
+        val aforeAccountId = createAccount(auth, name = "Afore", type = "AFORE", openingBalance = "100000")
+
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/payments")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"fromAccountId":"$aforeAccountId","amount":100,"date":"2026-08-28"}""")
+        ).andExpect(status().isBadRequest)
+    }
+
+    @Test
     fun `un usuario no puede ver la tarjeta de otro usuario`() {
         val ownerAuth = registerAndAuth("cardowner")
         val cardId = createCreditCard(ownerAuth, creditLimit = "50000")
