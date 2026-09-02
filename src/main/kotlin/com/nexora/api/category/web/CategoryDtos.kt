@@ -3,6 +3,7 @@ package com.nexora.api.category.web
 import com.nexora.api.category.domain.Category
 import com.nexora.api.category.domain.CategoryStatus
 import com.nexora.api.category.domain.CategoryType
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import java.time.Instant
@@ -13,6 +14,7 @@ data class CreateCategoryRequest(
     val name: String,
 
     @field:NotNull(message = "El tipo de categoría es obligatorio.")
+    @field:Schema(description = "INCOME o EXPENSE — solo se puede usar en movimientos del mismo tipo.")
     val type: CategoryType,
 )
 

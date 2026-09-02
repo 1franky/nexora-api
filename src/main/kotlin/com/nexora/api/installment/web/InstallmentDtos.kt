@@ -5,6 +5,7 @@ import com.nexora.api.installment.domain.InstallmentPlanStatus
 import com.nexora.api.installment.domain.InstallmentPlanType
 import com.nexora.api.installment.domain.InstallmentPlanView
 import com.nexora.api.installment.domain.InstallmentStatus
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.DecimalMin
 import jakarta.validation.constraints.Max
 import jakarta.validation.constraints.Min
@@ -31,8 +32,8 @@ data class CreateInstallmentPlanRequest(
     @field:Max(60)
     val installmentCount: Int,
 
-    /** Tasa de interés simple mensual, en porcentaje (ej. 2.5 = 2.5%/mes). 0 = MSI. */
     @field:DecimalMin(value = "0.0", message = "La tasa de interés no puede ser negativa.")
+    @field:Schema(description = "Tasa simple mensual, en porcentaje (ej. 2.5 = 2.5%/mes). 0 = MSI, mayor a 0 = MCI.", example = "0")
     val interestRate: BigDecimal = BigDecimal.ZERO,
 
     val categoryId: UUID? = null,
@@ -57,6 +58,7 @@ data class UpdateInstallmentPlanRequest(
     val installmentCount: Int,
 
     @field:DecimalMin(value = "0.0", message = "La tasa de interés no puede ser negativa.")
+    @field:Schema(description = "Tasa simple mensual, en porcentaje. Bloqueada (junto con amount/installmentCount) si ya hay alguna cuota pagada.")
     val interestRate: BigDecimal = BigDecimal.ZERO,
 
     val categoryId: UUID? = null,
@@ -100,6 +102,7 @@ data class InstallmentPlanResponse(
     val status: InstallmentPlanStatus,
     val installmentsPaid: Int,
     val installmentsPending: Int,
+    @field:Schema(description = "Suma de las cuotas pendientes — la parte de totalAmount que aún no toca pagar en el corte actual.")
     val financedBalance: BigDecimal,
     val nextInstallment: InstallmentResponse?,
     val installments: List<InstallmentResponse>,

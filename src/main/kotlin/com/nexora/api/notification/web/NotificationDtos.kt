@@ -3,6 +3,7 @@ package com.nexora.api.notification.web
 import com.nexora.api.notification.domain.Notification
 import com.nexora.api.notification.domain.NotificationStatus
 import com.nexora.api.notification.domain.NotificationType
+import io.swagger.v3.oas.annotations.media.Schema
 import java.time.Instant
 import java.util.UUID
 
@@ -11,6 +12,7 @@ data class NotificationResponse(
     val type: NotificationType,
     val title: String,
     val message: String,
+    @field:Schema(description = "Id de la tarjeta o cuota a la que se refiere el aviso (según type), para poder navegar a su detalle.")
     val relatedEntityId: UUID?,
     val status: NotificationStatus,
     val createdAt: Instant,

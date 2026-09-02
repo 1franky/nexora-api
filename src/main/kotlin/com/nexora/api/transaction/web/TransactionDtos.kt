@@ -3,6 +3,7 @@ package com.nexora.api.transaction.web
 import com.nexora.api.transaction.domain.Transaction
 import com.nexora.api.transaction.domain.TransactionStatus
 import com.nexora.api.transaction.domain.TransactionType
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.DecimalMin
 import jakarta.validation.constraints.NotNull
 import java.math.BigDecimal
@@ -29,6 +30,7 @@ data class CreateTransactionRequest(
     val reference: String? = null,
 )
 
+@Schema(description = "Solo INCOME/EXPENSE — ver TransactionController.")
 data class UpdateTransactionRequest(
     @field:NotNull(message = "El monto es obligatorio.")
     @field:DecimalMin(value = "0.0", inclusive = false, message = "El monto debe ser mayor a cero.")
@@ -73,6 +75,7 @@ data class TransactionResponse(
      * solo se diferencian por el signo interno de `balanceEffect`
      * (ver TransactionService.recordTransfer/recordCreditCardPayment).
      */
+    @field:Schema(description = "amount con signo: positivo si aumenta el saldo de accountId, negativo si lo disminuye. Distingue la pierna de salida de la de entrada en TRANSFER/CREDIT_CARD_PAYMENT (comparten el mismo type).")
     val balanceEffect: BigDecimal,
     val date: LocalDate,
     val description: String?,
