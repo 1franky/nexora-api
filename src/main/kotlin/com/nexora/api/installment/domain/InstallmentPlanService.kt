@@ -1,5 +1,7 @@
 package com.nexora.api.installment.domain
 
+import com.nexora.api.audit.domain.AuditEventType
+import com.nexora.api.audit.domain.AuditLogService
 import com.nexora.api.common.domain.BusinessRuleException
 import com.nexora.api.common.domain.NotFoundException
 import com.nexora.api.creditcard.domain.BillingCycleCalculator
@@ -45,6 +47,7 @@ class InstallmentPlanService(
     private val creditCardService: CreditCardService,
     private val transactionService: TransactionService,
     private val billingCycleCalculator: BillingCycleCalculator,
+    private val auditLogService: AuditLogService,
 ) {
 
     /**
@@ -132,6 +135,15 @@ class InstallmentPlanService(
             )
         }
         val savedInstallments = installmentRepository.saveAll(installments)
+
+        // La compra en sí ya quedó auditada dentro de recordCreditCardPurchase
+        // (CREDIT_CARD_PURCHASE_CREATED); esta es la parte específica del plan
+        // — una fila por plan, no una por cuota (serían installmentCount filas
+        // de puro ruido para un log pensado para lectura humana, ver AuditLog).
+        auditLogService.record(
+            userId, AuditEventType.INSTALLMENT_PLAN_CREATED, "InstallmentPlan", requireNotNull(plan.id),
+            "Plan ${planType.name} de \$${totalAmount.setScale(2, RoundingMode.HALF_UP).toPlainString()} a $installmentCount cuotas en '${merchant.trim()}'.",
+        )
 
         return InstallmentPlanView(plan, savedInstallments, purchase)
     }

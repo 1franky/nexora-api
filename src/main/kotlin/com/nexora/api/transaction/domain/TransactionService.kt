@@ -4,6 +4,8 @@ import com.nexora.api.account.domain.Account
 import com.nexora.api.account.domain.AccountService
 import com.nexora.api.account.domain.AccountStatus
 import com.nexora.api.account.domain.AccountType
+import com.nexora.api.audit.domain.AuditEventType
+import com.nexora.api.audit.domain.AuditLogService
 import com.nexora.api.category.domain.Category
 import com.nexora.api.category.domain.CategoryService
 import com.nexora.api.category.domain.CategoryStatus
@@ -14,6 +16,7 @@ import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.LocalDate
 import java.util.UUID
 
@@ -22,6 +25,7 @@ class TransactionService(
     private val transactionRepository: TransactionRepository,
     private val accountService: AccountService,
     private val categoryService: CategoryService,
+    private val auditLogService: AuditLogService,
 ) {
 
     @Transactional
@@ -81,7 +85,13 @@ class TransactionService(
             categoryId = categoryId,
         )
         accountService.applyBalanceDelta(account, balanceEffect)
-        return transactionRepository.save(transaction)
+        val saved = transactionRepository.save(transaction)
+        val kind = if (type == TransactionType.INCOME) "Ingreso" else "Gasto"
+        auditLogService.record(
+            userId, AuditEventType.TRANSACTION_CREATED, "Transaction", requireNotNull(saved.id),
+            "$kind de \$${money(amount)} en '${account.name}'.",
+        )
+        return saved
     }
 
     /**
@@ -137,6 +147,11 @@ class TransactionService(
 
         val savedOutgoing = transactionRepository.save(outgoing)
         val savedIncoming = transactionRepository.save(incoming)
+        // Una fila de auditoría por transferencia, no una por pierna — las dos piernas son la misma operación de negocio.
+        auditLogService.record(
+            userId, AuditEventType.TRANSACTION_CREATED, "Transaction", requireNotNull(savedOutgoing.id),
+            "Transferencia de \$${money(amount)} de '${fromAccount.name}' a '${toAccount.name}'.",
+        )
         return TransferResult(savedOutgoing, savedIncoming)
     }
 
@@ -178,7 +193,12 @@ class TransactionService(
             categoryId = categoryId,
         )
         accountService.applyBalanceDelta(cardAccount, balanceEffect)
-        return transactionRepository.save(transaction)
+        val saved = transactionRepository.save(transaction)
+        auditLogService.record(
+            userId, AuditEventType.CREDIT_CARD_PURCHASE_CREATED, "Transaction", requireNotNull(saved.id),
+            "Compra de \$${money(amount)} en '${merchant.trim()}' con '${cardAccount.name}'.",
+        )
+        return saved
     }
 
     /**
@@ -225,7 +245,12 @@ class TransactionService(
         transaction.description = description?.trim()
         transaction.reference = reference?.trim()
         accountService.applyBalanceDelta(cardAccount, delta)
-        return transactionRepository.save(transaction)
+        val saved = transactionRepository.save(transaction)
+        auditLogService.record(
+            userId, AuditEventType.TRANSACTION_UPDATED, "Transaction", requireNotNull(saved.id),
+            "Compra de '${cardAccount.name}' editada: monto actual \$${money(amount)} en '${merchant.trim()}'.",
+        )
+        return saved
     }
 
     /**
@@ -287,6 +312,10 @@ class TransactionService(
 
         val savedOutgoing = transactionRepository.save(outgoing)
         val savedIncoming = transactionRepository.save(incoming)
+        auditLogService.record(
+            userId, AuditEventType.PAYMENT_CREATED, "Transaction", requireNotNull(savedOutgoing.id),
+            "Pago de \$${money(amount)} a '${cardAccount.name}' desde '${fromAccount.name}'.",
+        )
         return TransferResult(savedOutgoing, savedIncoming)
     }
 
@@ -334,7 +363,13 @@ class TransactionService(
         transaction.description = description?.trim()
         transaction.reference = reference?.trim()
         accountService.applyBalanceDelta(account, delta)
-        return transactionRepository.save(transaction)
+        val saved = transactionRepository.save(transaction)
+        val kind = if (transaction.type == TransactionType.INCOME) "Ingreso" else "Gasto"
+        auditLogService.record(
+            userId, AuditEventType.TRANSACTION_UPDATED, "Transaction", requireNotNull(saved.id),
+            "$kind de '${account.name}' editado: monto actual \$${money(amount)}.",
+        )
+        return saved
     }
 
     /**
@@ -375,6 +410,10 @@ class TransactionService(
 
             else -> throw BusinessRuleException("Este movimiento no se puede borrar desde aquí.")
         }
+        auditLogService.record(
+            userId, AuditEventType.TRANSACTION_DELETED, "Transaction", requireNotNull(transaction.id),
+            "Movimiento de tipo ${transaction.type} por \$${money(transaction.amount)} en '${account.name}' borrado.",
+        )
     }
 
     /**
@@ -438,6 +477,9 @@ class TransactionService(
             throw BusinessRuleException("El monto debe ser mayor a cero.")
         }
     }
+
+    /** Formato consistente para los montos que aparecen en AuditLog.summary. */
+    private fun money(amount: BigDecimal): String = amount.setScale(2, RoundingMode.HALF_UP).toPlainString()
 }
 
 data class TransferResult(val outgoing: Transaction, val incoming: Transaction)
