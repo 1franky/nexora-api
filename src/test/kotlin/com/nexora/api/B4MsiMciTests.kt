@@ -312,6 +312,35 @@ class B4MsiMciTests {
             .andExpect(status().isNotFound)
     }
 
+    @Test
+    fun `listar los planes de una tarjeta con varios planes no mezcla sus transacciones ni sus cuotas`() {
+        val auth = registerAndAuth("variosplanes")
+        val cardId = createCreditCard(auth)
+        val planA = createPlan(auth, cardId, amount = "1200", installments = 3) // 3 cuotas de 400
+        val planB = createPlan(auth, cardId, amount = "600", installments = 2) // 2 cuotas de 300
+        val planAId = JsonPath.read<String>(planA, "$.id")
+        val planBId = JsonPath.read<String>(planB, "$.id")
+
+        val response = mockMvc.perform(get("/api/v1/credit-cards/$cardId/installment-plans").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertEquals(2, JsonPath.read<Int>(response, "$.length()"))
+
+        // Filtrar directamente con JsonPath (p.ej. $[?(@.id=='...')][0].campo) no resuelve bien
+        // encadenado con listas/length() en esta config — más simple leer todo como
+        // List<Map<...>> y navegarlo con Kotlin, valida igual que la lista no mezcló nada entre planes.
+        val plans = JsonPath.read<List<Map<String, Any>>>(response, "$")
+        val viewA = requireNotNull(plans.find { it["id"] == planAId })
+        val installmentsA = viewA["installments"] as List<*>
+        assertEquals(3, installmentsA.size)
+        assertMoneyEquals("400", (installmentsA[0] as Map<*, *>)["amount"].toString())
+
+        val viewB = requireNotNull(plans.find { it["id"] == planBId })
+        val installmentsB = viewB["installments"] as List<*>
+        assertEquals(2, installmentsB.size)
+        assertMoneyEquals("300", (installmentsB[0] as Map<*, *>)["amount"].toString())
+    }
+
     // --- helpers ---
 
     private fun registerAndAuth(prefix: String): RequestPostProcessor = mockMvc.registerAndAuthenticate(prefix)
