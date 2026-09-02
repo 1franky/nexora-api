@@ -160,6 +160,8 @@ docker compose up --build -d
 
 La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stage, JDK 21 → JRE 21). Postgres sigue sin exponer ningún puerto al host/Internet, ni en el VPS.
 
+La JVM corre con `-Duser.timezone=America/Mexico_City` (fijo en el `ENTRYPOINT` del Dockerfile): todo cálculo de "hoy"/"este mes" sin zona explícita (dashboard, ciclo de facturación de tarjetas, notificaciones) usa esa zona en vez del UTC por defecto de la imagen base — de lo contrario, entre las 6pm y medianoche hora CDMX, el servidor ya calcula con la fecha del día siguiente.
+
 ## Estado del proyecto
 
 En construcción. **B1 (base del proyecto)** a **B7 (calidad — autenticación JWT)** completos: login con JWT propio (access + refresh token rotado) y rate limiting, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica), y notificaciones de pagos/cuotas por vencer (generadas al vuelo y por un scheduler diario). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).

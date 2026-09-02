@@ -22,4 +22,10 @@ COPY --from=build /workspace/build/libs/*.jar app.jar
 USER nexora
 
 EXPOSE 3005
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# user.timezone fijo a America/Mexico_City: sin esto la JVM corre en UTC (el
+# default de la imagen base), y todo el código que usa LocalDate.now()/
+# YearMonth.now() sin zona explícita (dashboard, tarjetas, notificaciones)
+# calcula "hoy"/"este mes" ~6h adelantado respecto al usuario. Eso hacía que,
+# entre las 6pm y medianoche hora CDMX, el último día del mes ya se calculara
+# como el primero del siguiente (ver README.md).
+ENTRYPOINT ["java", "-Duser.timezone=America/Mexico_City", "-jar", "app.jar"]
