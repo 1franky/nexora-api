@@ -6,6 +6,7 @@ import com.nexora.api.creditcard.domain.BillingCycleCalculator
 import com.nexora.api.creditcard.domain.CreditCardService
 import com.nexora.api.transaction.domain.Transaction
 import com.nexora.api.transaction.domain.TransactionService
+import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -189,9 +190,30 @@ class InstallmentPlanService(
         }
     }
 
+    /**
+     * A diferencia de [toView] (una query de Transaction y una de
+     * Installment por plan — bien para un solo plan, pero un N+1 si se usa
+     * en una lista), aquí se piden en lote las Transaction y los
+     * Installment de todos los planes de la tarjeta en una sola query cada
+     * una, y se arma cada [InstallmentPlanView] en memoria.
+     */
     fun listForCreditCard(userId: UUID, creditCardId: UUID): List<InstallmentPlanView> {
         creditCardService.getOwned(userId, creditCardId) // valida propiedad de la tarjeta
-        return installmentPlanRepository.findAllByCreditCardId(creditCardId).map { toView(it) }
+        val plans = installmentPlanRepository.findAllByCreditCardId(creditCardId)
+        if (plans.isEmpty()) return emptyList()
+
+        val planIds = plans.mapNotNull { it.id }
+        val transactionsById = transactionService.getAllByIds(plans.map { it.transactionId }).associateBy { it.id }
+        val installmentsByPlanId = installmentRepository
+            .findAllByInstallmentPlanIdIn(planIds, Sort.by(Sort.Direction.ASC, "number"))
+            .groupBy { it.installmentPlanId }
+
+        return plans.map { plan ->
+            val transaction = requireNotNull(transactionsById[plan.transactionId]) {
+                "Transacción de la compra original del plan no encontrada (id=${plan.transactionId})."
+            }
+            InstallmentPlanView(plan, installmentsByPlanId[plan.id] ?: emptyList(), transaction)
+        }
     }
 
     /**

@@ -392,6 +392,15 @@ class TransactionService(
      */
     fun getById(id: UUID): Transaction? = transactionRepository.findById(id).orElse(null)
 
+    /**
+     * Igual que [getById] pero en lote — una sola query en vez de una por
+     * id. Usada por [com.nexora.api.installment.domain.InstallmentPlanService.listForCreditCard]
+     * para no hacer un N+1 (antes: una query de Transaction *y* una de
+     * Installment por cada plan de la tarjeta).
+     */
+    fun getAllByIds(ids: List<UUID>): List<Transaction> =
+        if (ids.isEmpty()) emptyList() else transactionRepository.findAllById(ids)
+
     fun listForUser(userId: UUID, accountId: UUID?): List<Transaction> {
         val sort = Sort.by(Sort.Direction.DESC, "date", "createdAt")
         if (accountId != null) {
