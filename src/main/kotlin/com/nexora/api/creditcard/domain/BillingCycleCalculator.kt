@@ -35,6 +35,36 @@ class BillingCycleCalculator {
     fun paymentDueDateFor(closingDate: LocalDate, paymentDueDay: Int): LocalDate =
         dayInMonth(YearMonth.from(closingDate).plusMonths(1), paymentDueDay)
 
+    /**
+     * El ciclo que de verdad corresponde pagar en [date] — a diferencia de
+     * [closingDateOnOrAfter], que siempre mira hacia adelante (correcto
+     * para "a qué ciclo pertenece una compra nueva", pero no para "cuál es
+     * mi próximo pago"). Si [date] cae en el *período de gracia* de un
+     * ciclo que ya cerró — después de su corte, pero antes de su propia
+     * fecha límite de pago — ese ciclo ya cerrado es el que urge pagar, no
+     * el que cierra más adelante: con corte 27 y pago 7, el día 30 todavía
+     * debe el corte del 27 (pago límite el 7 del mes siguiente), no el
+     * corte del 27 del mes que sigue.
+     *
+     * [RelevantCycle.isGracePeriod] le dice al llamador que además debe
+     * calcular el ciclo que cierra más adelante como respaldo (ver
+     * DashboardService.upcomingPayments): si resulta que no queda nada
+     * pendiente de *este* ciclo de gracia — todo lo debido es más nuevo
+     * que su corte — el ciclo que sigue es el que en realidad importa.
+     */
+    fun currentPaymentCycle(closingDay: Int, paymentDueDay: Int, date: LocalDate): RelevantCycle {
+        val upcomingClosing = closingDateOnOrAfter(closingDay, date)
+        val previousClosing = dayInMonth(YearMonth.from(upcomingClosing).minusMonths(1), closingDay)
+        val previousDueDate = paymentDueDateFor(previousClosing, paymentDueDay)
+        return if (!date.isAfter(previousDueDate)) {
+            RelevantCycle(previousClosing, previousDueDate, isGracePeriod = true)
+        } else {
+            RelevantCycle(upcomingClosing, paymentDueDateFor(upcomingClosing, paymentDueDay), isGracePeriod = false)
+        }
+    }
+
     private fun dayInMonth(yearMonth: YearMonth, day: Int): LocalDate =
         yearMonth.atDay(day.coerceAtMost(yearMonth.lengthOfMonth()))
 }
+
+data class RelevantCycle(val closingDate: LocalDate, val paymentDueDate: LocalDate, val isGracePeriod: Boolean)

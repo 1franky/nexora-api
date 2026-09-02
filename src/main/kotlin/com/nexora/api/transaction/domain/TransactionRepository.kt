@@ -13,6 +13,14 @@ interface TransactionRepository : JpaRepository<Transaction, UUID> {
     fun findAllByAccountIdInAndDateBetween(accountIds: List<UUID>, start: LocalDate, end: LocalDate): List<Transaction>
     fun findAllByAccountIdInAndDateAfter(accountIds: List<UUID>, date: LocalDate): List<Transaction>
 
+    /**
+     * Compras de una tarjeta después de una fecha de corte — usada por
+     * DashboardService.upcomingPayments para excluir de "próximo pago" las
+     * compras de contado que ya cayeron en el ciclo siguiente (no se
+     * facturan hasta el corte después de ese).
+     */
+    fun findAllByAccountIdAndTypeAndDateAfter(accountId: UUID, type: TransactionType, date: LocalDate): List<Transaction>
+
     /** Las dos filas (salida/entrada) de una transferencia o un pago de tarjeta — ver [Transaction.transferGroupId]. */
     fun findAllByTransferGroupId(transferGroupId: UUID): List<Transaction>
 }
