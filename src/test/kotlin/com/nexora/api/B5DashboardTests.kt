@@ -1,6 +1,7 @@
 package com.nexora.api
 
 import com.jayway.jsonpath.JsonPath
+import com.nexora.api.creditcard.domain.BillingCycleCalculator
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
@@ -15,6 +16,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.math.BigDecimal
 import java.time.LocalDate
+import java.time.YearMonth
 import kotlin.test.assertEquals
 
 /**
@@ -28,6 +30,9 @@ class B5DashboardTests {
 
     @Autowired
     lateinit var mockMvc: MockMvc
+
+    @Autowired
+    lateinit var billingCycleCalculator: BillingCycleCalculator
 
     private val today: LocalDate = LocalDate.now()
 
@@ -148,6 +153,56 @@ class B5DashboardTests {
     }
 
     @Test
+    fun `una compra de contado despues del corte no entra en el proximo pago, solo la de antes`() {
+        // closingDay/paymentDueDay fijos y dentro de 1-28 (límite de CreateCreditCardRequest)
+        // a propósito, para no depender de en qué día del mes corre la prueba; la fecha de
+        // corte real se deriva con el mismo BillingCycleCalculator que usa producción.
+        // Cualquier ciclo de gracia candidato (el corte anterior a este) queda más de un mes
+        // atrás — mucho antes que las dos compras de esta prueba (recientes) — así que su
+        // "próximo pago" siempre da 0 y el cálculo cae de vuelta al corte que se prueba aquí
+        // (ver DashboardService.upcomingPaymentFor); no hace falta evitar el período de
+        // gracia a mano, el propio mecanismo de respaldo ya lo resuelve.
+        val closingDay = 1
+        val paymentDueDay = 15
+        val closingDate = billingCycleCalculator.closingDateOnOrAfter(closingDay, today)
+        val auth = registerAndAuth("cortenormal")
+        val cardId = createCreditCard(auth, closingDay, paymentDueDay)
+
+        createPurchase(auth, cardId, amount = "1000", date = closingDate.minusDays(2), merchant = "Antes del corte")
+        createPurchase(auth, cardId, amount = "500", date = closingDate.plusDays(2), merchant = "Después del corte")
+
+        val response = mockMvc.perform(get("/api/v1/dashboard").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertMoneyEquals("1500", JsonPath.read<Any>(response, "$.creditCardDebt").toString())
+        assertMoneyEquals("1000", JsonPath.read<Any>(response, "$.upcomingPayments[0].expectedPayment").toString())
+    }
+
+    @Test
+    fun `en el periodo de gracia, el proximo pago es del ciclo que ya cerro, no del que viene`() {
+        // Corte fijo el día 1: casi siempre "ayer o antes" salvo si la prueba corre el día 1
+        // mismo, así que el ciclo relevante es el que ya cerró (mientras no pase su propia
+        // fecha límite de pago) — no el que cerrará dentro de un mes.
+        val closingDay = 1
+        val paymentDueDay = 20
+        // El corte anterior al que viene: seguro con día fijo 1 (existe en todos los meses,
+        // sin necesidad del ajuste de fin de mes que hace BillingCycleCalculator internamente).
+        val upcomingClosing = billingCycleCalculator.closingDateOnOrAfter(closingDay, today)
+        val closingDate = YearMonth.from(upcomingClosing).minusMonths(1).atDay(closingDay)
+        val paymentDueDate = billingCycleCalculator.paymentDueDateFor(closingDate, paymentDueDay)
+        val auth = registerAndAuth("periododegracia")
+        val cardId = createCreditCard(auth, closingDay, paymentDueDay)
+
+        createPurchase(auth, cardId, amount = "800", date = closingDate.minusDays(3), merchant = "Antes del corte")
+
+        val response = mockMvc.perform(get("/api/v1/dashboard").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertEquals(paymentDueDate.toString(), JsonPath.read(response, "$.upcomingPayments[0].dueDate"))
+        assertMoneyEquals("800", JsonPath.read<Any>(response, "$.upcomingPayments[0].expectedPayment").toString())
+    }
+
+    @Test
     fun `un plan MSI activo se refleja en el compromiso mensual`() {
         val auth = registerAndAuth("msidash")
         val cardId = createCreditCard(auth)
@@ -217,16 +272,27 @@ class B5DashboardTests {
         ).andExpect(status().isCreated)
     }
 
-    private fun createCreditCard(auth: RequestPostProcessor): String {
+    private fun createCreditCard(auth: RequestPostProcessor): String = createCreditCard(auth, closingDay = 15, paymentDueDay = 5)
+
+    private fun createCreditCard(auth: RequestPostProcessor, closingDay: Int, paymentDueDay: Int): String {
         val response = mockMvc.perform(
             post("/api/v1/credit-cards")
                 .with(auth)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
-                    """{"name":"BBVA Azul","bank":"BBVA","last4":"1234","creditLimit":50000,"closingDay":15,"paymentDueDay":5,"currency":"MXN"}"""
+                    """{"name":"BBVA Azul","bank":"BBVA","last4":"1234","creditLimit":50000,"closingDay":$closingDay,"paymentDueDay":$paymentDueDay,"currency":"MXN"}"""
                 )
         ).andExpect(status().isCreated).andReturn().response.contentAsString
         return JsonPath.read(response, "$.id")
+    }
+
+    private fun createPurchase(auth: RequestPostProcessor, cardId: String, amount: String, date: LocalDate, merchant: String) {
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/purchases")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"amount":$amount,"date":"$date","merchant":"$merchant"}""")
+        ).andExpect(status().isCreated)
     }
 
     private fun assertMoneyEquals(expected: String, actual: String) {

@@ -4,9 +4,12 @@ import com.nexora.api.account.domain.Account
 import com.nexora.api.account.domain.AccountService
 import com.nexora.api.category.domain.Category
 import com.nexora.api.category.domain.CategoryService
+import com.nexora.api.creditcard.domain.BillingCycleCalculator
 import com.nexora.api.creditcard.domain.CreditCardService
+import com.nexora.api.creditcard.domain.CreditCardView
 import com.nexora.api.exchangerate.domain.BASE_CURRENCY
 import com.nexora.api.exchangerate.domain.ExchangeRateService
+import com.nexora.api.installment.domain.Installment
 import com.nexora.api.installment.domain.InstallmentPlanService
 import com.nexora.api.installment.domain.InstallmentPlanType
 import com.nexora.api.transaction.domain.Transaction
@@ -68,6 +71,7 @@ class DashboardService(
     private val creditCardService: CreditCardService,
     private val installmentPlanService: InstallmentPlanService,
     private val exchangeRateService: ExchangeRateService,
+    private val billingCycleCalculator: BillingCycleCalculator,
 ) {
 
     fun getDashboard(userId: UUID, month: YearMonth, recentTransactionsLimit: Int): DashboardView {
@@ -95,23 +99,11 @@ class DashboardService(
         val creditCards = creditCardService.listForUser(userId)
         val creditCardDebt = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.currentDebt.toBase(c.account.currency) }
         val availableCredit = creditCards.fold(BigDecimal.ZERO) { acc, c -> acc + c.availableCredit.toBase(c.account.currency) }
-        // currentDebt es la deuda total de la tarjeta (una compra a MSI/MCI se registra por su
-        // monto completo desde el día 1, ver InstallmentPlanService.create), no lo que toca pagar
-        // en el próximo corte: a una compra de $12,000 a 12 MSI solo le corresponde $1,000 este
-        // corte, no los $12,000. Se descuentan las cuotas PENDING cuya fecha límite es posterior
-        // al próximo pago de la tarjeta (las que aún no le toca pagar) de currentDebt.
         val pendingInstallmentsByCard = installmentPlanService.pendingInstallmentsByCard(userId)
         val upcomingPayments = creditCards
             .filter { it.currentDebt > BigDecimal.ZERO }
-            .sortedBy { it.nextPaymentDueDate }
-            .map { card ->
-                val futureInstallments = pendingInstallmentsByCard[card.creditCard.id]
-                    ?.filter { it.dueDate > card.nextPaymentDueDate }
-                    ?.fold(BigDecimal.ZERO) { acc, i -> acc + i.amount }
-                    ?: BigDecimal.ZERO
-                val expectedPayment = (card.currentDebt - futureInstallments).max(BigDecimal.ZERO)
-                UpcomingCardPayment(requireNotNull(card.creditCard.id), card.creditCard.name, card.nextPaymentDueDate, expectedPayment)
-            }
+            .map { card -> upcomingPaymentFor(card, pendingInstallmentsByCard[card.creditCard.id] ?: emptyList()) }
+            .sortedBy { it.dueDate }
 
         val activePlans = installmentPlanService.listActivePlansForUser(userId)
         val activeMsiPlansCount = activePlans.count { it.planType == InstallmentPlanType.MSI }
@@ -143,6 +135,55 @@ class DashboardService(
             expenseEvolution = expenseEvolution,
             recentTransactions = recentTransactions,
         )
+    }
+
+    /**
+     * currentDebt es la deuda total de la tarjeta (una compra a MSI/MCI se
+     * registra por su monto completo desde el día 1, ver
+     * InstallmentPlanService.create; una compra de contado normal también
+     * se registra completa el día de la compra), no lo que toca pagar en
+     * el próximo corte. Dos cosas quedan fuera de "próximo pago":
+     * - Las cuotas MSI/MCI pendientes cuya fecha límite es posterior al
+     *   pago que se está calculando (a una compra de $12,000 a 12 MSI
+     *   solo le corresponde $1,000 este corte).
+     * - Las compras de contado (sin plan) fechadas después del corte de
+     *   este ciclo — ya pertenecen al ciclo siguiente, se facturan hasta
+     *   el próximo corte de ese (con corte 27, una compra el día 29 no
+     *   entra en el pago que vence este mes).
+     *
+     * Además, [billingCycleCalculator] decide *cuál* ciclo es el
+     * relevante: si hoy cae en el período de gracia de un ciclo que ya
+     * cerró (después de su corte, pero antes de su propia fecha límite de
+     * pago), ese es el que urge — no el que cierra más adelante. Si ese
+     * ciclo de gracia no tiene nada pendiente de verdad (p.ej. una tarjeta
+     * nueva sin actividad todavía en ese ciclo hipotético — todo lo debido
+     * es más nuevo que su corte), se usa el ciclo que sigue en su lugar.
+     */
+    private fun upcomingPaymentFor(card: CreditCardView, installments: List<Installment>): UpcomingCardPayment {
+        val today = LocalDate.now()
+        val cardAccountId = requireNotNull(card.account.id)
+        val cycle = billingCycleCalculator.currentPaymentCycle(card.creditCard.closingDay, card.creditCard.paymentDueDay, today)
+
+        // El corte de gracia siempre es <= el corte hacia adelante — una sola query cubre ambos candidatos.
+        val earliestClosing = minOf(cycle.closingDate, card.nextClosingDate)
+        val purchasesSinceEarliestClosing = transactionRepository
+            .findAllByAccountIdAndTypeAndDateAfter(cardAccountId, TransactionType.CREDIT_CARD_PURCHASE, earliestClosing)
+            .filterNot { installmentPlanService.isLinkedToPlan(requireNotNull(it.id)) }
+
+        fun expectedAsOf(closingDate: LocalDate, paymentDueDate: LocalDate): BigDecimal {
+            val futurePurchases = purchasesSinceEarliestClosing.filter { it.date > closingDate }.fold(BigDecimal.ZERO) { acc, t -> acc + t.amount }
+            val futureInstallments = installments.filter { it.dueDate > paymentDueDate }.fold(BigDecimal.ZERO) { acc, i -> acc + i.amount }
+            return (card.currentDebt - futurePurchases - futureInstallments).max(BigDecimal.ZERO)
+        }
+
+        if (cycle.isGracePeriod) {
+            val graceExpected = expectedAsOf(cycle.closingDate, cycle.paymentDueDate)
+            if (graceExpected > BigDecimal.ZERO) {
+                return UpcomingCardPayment(requireNotNull(card.creditCard.id), card.creditCard.name, cycle.paymentDueDate, graceExpected)
+            }
+        }
+        val forwardExpected = expectedAsOf(card.nextClosingDate, card.nextPaymentDueDate)
+        return UpcomingCardPayment(requireNotNull(card.creditCard.id), card.creditCard.name, card.nextPaymentDueDate, forwardExpected)
     }
 
     private fun transactionsFor(accountIds: List<UUID>, start: LocalDate, end: LocalDate): List<Transaction> =
