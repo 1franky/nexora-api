@@ -1,0 +1,337 @@
+{
+  "endpoints": [
+    "DELETE /api/v1/transactions/{id}",
+    "GET /api/v1/accounts",
+    "GET /api/v1/accounts/summary",
+    "GET /api/v1/accounts/{id}",
+    "GET /api/v1/audit-log",
+    "GET /api/v1/categories",
+    "GET /api/v1/credit-cards",
+    "GET /api/v1/credit-cards/{cardId}/installment-plans",
+    "GET /api/v1/credit-cards/{id}",
+    "GET /api/v1/dashboard",
+    "GET /api/v1/installment-plans/{id}",
+    "GET /api/v1/notifications",
+    "GET /api/v1/reports",
+    "GET /api/v1/transactions",
+    "GET /api/v1/users/me",
+    "PATCH /api/v1/categories/{id}",
+    "POST /api/v1/accounts",
+    "POST /api/v1/auth/login",
+    "POST /api/v1/auth/logout",
+    "POST /api/v1/auth/refresh",
+    "POST /api/v1/categories",
+    "POST /api/v1/categories/{id}/activate",
+    "POST /api/v1/categories/{id}/archive",
+    "POST /api/v1/credit-cards",
+    "POST /api/v1/credit-cards/{cardId}/installment-plans",
+    "POST /api/v1/credit-cards/{id}/payments",
+    "POST /api/v1/credit-cards/{id}/purchases",
+    "POST /api/v1/installment-plans/{id}/installments/{installmentId}/pay",
+    "POST /api/v1/notifications/read-all",
+    "POST /api/v1/notifications/{id}/read",
+    "POST /api/v1/transactions",
+    "POST /api/v1/transfers",
+    "POST /api/v1/users",
+    "PUT /api/v1/accounts/{id}",
+    "PUT /api/v1/credit-cards/{id}",
+    "PUT /api/v1/credit-cards/{id}/purchases/{transactionId}",
+    "PUT /api/v1/installment-plans/{id}",
+    "PUT /api/v1/transactions/{id}"
+  ],
+  "schemas": {
+    "AccountResponse": [
+      "balance",
+      "createdAt",
+      "currency",
+      "id",
+      "includeInAvailableBalance",
+      "includeInNetWorth",
+      "name",
+      "status",
+      "type",
+      "updatedAt"
+    ],
+    "ApiError": [
+      "error",
+      "fieldErrors",
+      "message",
+      "path",
+      "status",
+      "timestamp"
+    ],
+    "AuditLogResponse": [
+      "entityId",
+      "entityType",
+      "eventType",
+      "id",
+      "occurredAt",
+      "summary"
+    ],
+    "BalanceSummaryResponse": [
+      "availableBalance",
+      "netWorth"
+    ],
+    "CategoryAmountResponse": [
+      "amount",
+      "categoryId",
+      "categoryName"
+    ],
+    "CategoryResponse": [
+      "createdAt",
+      "id",
+      "name",
+      "status",
+      "type"
+    ],
+    "CreateAccountRequest": [
+      "currency",
+      "includeInAvailableBalance",
+      "includeInNetWorth",
+      "name",
+      "openingBalance",
+      "type"
+    ],
+    "CreateCategoryRequest": [
+      "name",
+      "type"
+    ],
+    "CreateCreditCardRequest": [
+      "bank",
+      "closingDay",
+      "creditLimit",
+      "currency",
+      "last4",
+      "name",
+      "paymentDueDay"
+    ],
+    "CreateInstallmentPlanRequest": [
+      "amount",
+      "categoryId",
+      "date",
+      "description",
+      "installmentCount",
+      "interestRate",
+      "merchant",
+      "reference"
+    ],
+    "CreateTransactionRequest": [
+      "accountId",
+      "amount",
+      "categoryId",
+      "date",
+      "description",
+      "reference",
+      "type"
+    ],
+    "CreateTransferRequest": [
+      "amount",
+      "date",
+      "description",
+      "fromAccountId",
+      "reference",
+      "toAccountId"
+    ],
+    "CreditCardPaymentRequest": [
+      "amount",
+      "date",
+      "description",
+      "fromAccountId",
+      "reference"
+    ],
+    "CreditCardPurchaseRequest": [
+      "amount",
+      "categoryId",
+      "date",
+      "description",
+      "merchant",
+      "reference"
+    ],
+    "CreditCardResponse": [
+      "accountId",
+      "availableCredit",
+      "bank",
+      "closingDay",
+      "creditLimit",
+      "currency",
+      "currentDebt",
+      "id",
+      "last4",
+      "name",
+      "nextClosingDate",
+      "nextPaymentDueDate",
+      "paymentDueDay",
+      "status"
+    ],
+    "DashboardResponse": [
+      "activeMsiPlansCount",
+      "availableBalance",
+      "availableCredit",
+      "creditCardDebt",
+      "expenseEvolution",
+      "expenseThisMonth",
+      "expensesByCategory",
+      "incomeByCategory",
+      "incomeThisMonth",
+      "month",
+      "monthlyBalance",
+      "monthlyInstallmentCommitment",
+      "netWorth",
+      "netWorthEvolution",
+      "recentTransactions",
+      "upcomingPayments"
+    ],
+    "FieldError": [
+      "field",
+      "message"
+    ],
+    "InstallmentPlanResponse": [
+      "categoryId",
+      "creditCardId",
+      "description",
+      "endDate",
+      "financedBalance",
+      "id",
+      "installmentAmount",
+      "installmentCount",
+      "installments",
+      "installmentsPaid",
+      "installmentsPending",
+      "interestAmount",
+      "interestRate",
+      "merchant",
+      "nextInstallment",
+      "originalAmount",
+      "planType",
+      "reference",
+      "startDate",
+      "status",
+      "totalAmount",
+      "transactionId"
+    ],
+    "InstallmentResponse": [
+      "amount",
+      "dueDate",
+      "id",
+      "number",
+      "paidAt",
+      "status"
+    ],
+    "LoginRequest": [
+      "email",
+      "password"
+    ],
+    "MonthlyPointResponse": [
+      "amount",
+      "month"
+    ],
+    "NotificationResponse": [
+      "createdAt",
+      "id",
+      "message",
+      "readAt",
+      "relatedEntityId",
+      "status",
+      "title",
+      "type"
+    ],
+    "RefreshRequest": [
+      "refreshToken"
+    ],
+    "RegisterUserRequest": [
+      "displayName",
+      "email",
+      "password"
+    ],
+    "ReportResponse": [
+      "balance",
+      "expensesByCategory",
+      "from",
+      "incomeByCategory",
+      "monthlyExpense",
+      "monthlyIncome",
+      "to",
+      "totalExpense",
+      "totalIncome",
+      "transactions"
+    ],
+    "TokenResponse": [
+      "accessToken",
+      "expiresInSeconds",
+      "refreshToken",
+      "tokenType"
+    ],
+    "TransactionResponse": [
+      "accountId",
+      "amount",
+      "balanceEffect",
+      "categoryId",
+      "counterAccountId",
+      "createdAt",
+      "date",
+      "description",
+      "id",
+      "merchant",
+      "reference",
+      "status",
+      "transferGroupId",
+      "type"
+    ],
+    "TransferResponse": [
+      "incoming",
+      "outgoing"
+    ],
+    "UpcomingCardPaymentResponse": [
+      "creditCardId",
+      "creditCardName",
+      "dueDate",
+      "expectedPayment"
+    ],
+    "UpdateAccountRequest": [
+      "includeInAvailableBalance",
+      "includeInNetWorth",
+      "name"
+    ],
+    "UpdateCategoryRequest": [
+      "name"
+    ],
+    "UpdateCreditCardPurchaseRequest": [
+      "amount",
+      "categoryId",
+      "date",
+      "description",
+      "merchant",
+      "reference"
+    ],
+    "UpdateCreditCardRequest": [
+      "bank",
+      "closingDay",
+      "creditLimit",
+      "name",
+      "paymentDueDay"
+    ],
+    "UpdateInstallmentPlanRequest": [
+      "amount",
+      "categoryId",
+      "date",
+      "description",
+      "installmentCount",
+      "interestRate",
+      "merchant",
+      "reference"
+    ],
+    "UpdateTransactionRequest": [
+      "amount",
+      "categoryId",
+      "date",
+      "description",
+      "reference"
+    ],
+    "UserResponse": [
+      "createdAt",
+      "displayName",
+      "email",
+      "id"
+    ]
+  }
+}
