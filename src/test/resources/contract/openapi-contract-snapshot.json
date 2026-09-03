@@ -17,9 +17,11 @@
     "GET /api/v1/users/me",
     "PATCH /api/v1/categories/{id}",
     "POST /api/v1/accounts",
+    "POST /api/v1/auth/forgot-password",
     "POST /api/v1/auth/login",
     "POST /api/v1/auth/logout",
     "POST /api/v1/auth/refresh",
+    "POST /api/v1/auth/reset-password",
     "POST /api/v1/categories",
     "POST /api/v1/categories/{id}/activate",
     "POST /api/v1/categories/{id}/archive",
@@ -185,6 +187,9 @@
       "field",
       "message"
     ],
+    "ForgotPasswordRequest": [
+      "email"
+    ],
     "InstallmentPlanResponse": [
       "categoryId",
       "creditCardId",
@@ -254,6 +259,11 @@
       "totalExpense",
       "totalIncome",
       "transactions"
+    ],
+    "ResetPasswordRequest": [
+      "code",
+      "email",
+      "newPassword"
     ],
     "TokenResponse": [
       "accessToken",

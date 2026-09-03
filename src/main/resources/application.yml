@@ -49,3 +49,10 @@ nexora:
     # (un origen distinto al de esta API), no del contenedor de nexora-web.
     # Lista separada por comas; en el VPS debe incluir el dominio público real.
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3006}
+  mail:
+    # B10 (recuperación de contraseña): Resend, vía su API HTTP. Vacío en dev
+    # local = el código se loguea en vez de enviarse (ver ResendEmailSender).
+    # En el VPS SIEMPRE debe tener un valor real.
+    resend-api-key: ${RESEND_API_KEY:}
+    from-address: ${MAIL_FROM_ADDRESS:noreply@contacto.franciscolopez.uk}
+    from-name: ${MAIL_FROM_NAME:Nexora}

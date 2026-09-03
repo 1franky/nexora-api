@@ -69,7 +69,13 @@ tasks.withType<Test> {
 	// misma IP simulada. Se sube el límite para que no se dispare entre
 	// tests de otros módulos; el comportamiento de 429 en sí se prueba
 	// aparte, de forma aislada (RateLimitFilterTests, sin Spring context).
+	// forgot-password/reset-password (B10) tienen su propio límite, más bajo
+	// que el default — sin subirlo aparte, un solo test de B10PasswordResetTests
+	// (que llama reset-password 6+ veces para probar el máximo de intentos)
+	// ya alcanzaría el 429 antes de terminar.
 	environment("NEXORA_RATE_LIMIT_MAX_REQUESTS", "100000")
+	environment("NEXORA_RATE_LIMIT_FORGOT_PASSWORD_MAX_REQUESTS", "100000")
+	environment("NEXORA_RATE_LIMIT_RESET_PASSWORD_MAX_REQUESTS", "100000")
 	// Puerto sin nada escuchando: toda llamada de FrankfurterExchangeRateClient falla rápido y
 	// determinista (sin red real, sin flakiness), ejercitando el respaldo de ExchangeRateService.
 	// Los tests que necesitan una conversión ya resuelta insertan el ExchangeRate directamente.
