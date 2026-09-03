@@ -35,6 +35,16 @@ data class UpcomingCardPayment(
 
 data class MonthlyPoint(val month: YearMonth, val amount: BigDecimal)
 
+/**
+ * Qué cuenta como "gasto" para expenseThisMonth/expensesByCategory/expenseEvolution:
+ * EXPENSE (cuenta de débito/efectivo) y CREDIT_CARD_PURCHASE (compra de
+ * tarjeta, ver TransactionService.recordCreditCardPurchase — se registra por
+ * el monto completo el día de la compra, igual que currentDebt). CREDIT_CARD_PAYMENT
+ * queda fuera: es solo mover dinero para cubrir una deuda ya contada aquí como
+ * gasto en el momento de la compra, no gasto nuevo.
+ */
+private val EXPENSE_TYPES = setOf(TransactionType.EXPENSE, TransactionType.CREDIT_CARD_PURCHASE)
+
 data class DashboardView(
     val month: YearMonth,
     val availableBalance: BigDecimal,
@@ -85,11 +95,11 @@ class DashboardService(
         val monthTransactions = transactionsFor(accountIds, monthStart, monthEnd)
 
         val incomeThisMonth = monthTransactions.filter { it.type == TransactionType.INCOME }.sumAmount()
-        val expenseThisMonth = monthTransactions.filter { it.type == TransactionType.EXPENSE }.sumAmount()
+        val expenseThisMonth = monthTransactions.filter { it.type in EXPENSE_TYPES }.sumAmount()
 
         val categoriesById = categoryService.listForUser(userId).associateBy { it.id }
-        val expensesByCategory = groupByCategory(monthTransactions, TransactionType.EXPENSE, categoriesById)
-        val incomeByCategory = groupByCategory(monthTransactions, TransactionType.INCOME, categoriesById)
+        val expensesByCategory = groupByCategory(monthTransactions, EXPENSE_TYPES, categoriesById)
+        val incomeByCategory = groupByCategory(monthTransactions, setOf(TransactionType.INCOME), categoriesById)
 
         // creditCardDebt/availableCredit se agregan en MXN igual que disponible/patrimonio
         // (ver AccountService.getBalanceSummary): una tarjeta en otra moneda se convierte,
@@ -191,10 +201,10 @@ class DashboardService(
 
     private fun groupByCategory(
         transactions: List<Transaction>,
-        type: TransactionType,
+        types: Set<TransactionType>,
         categoriesById: Map<UUID?, Category>,
     ): List<CategoryAmount> =
-        transactions.filter { it.type == type && it.categoryId != null }
+        transactions.filter { it.type in types && it.categoryId != null }
             .groupBy { it.categoryId!! }
             .map { (categoryId, list) ->
                 CategoryAmount(categoryId, categoriesById[categoryId]?.name ?: "Sin categoría", list.sumAmount())
@@ -236,7 +246,7 @@ class DashboardService(
         if (accountIds.isEmpty()) return months.map { MonthlyPoint(it, BigDecimal.ZERO) }
         val windowStart = months.first().atDay(1)
         val transactions = transactionRepository.findAllByAccountIdInAndDateBetween(accountIds, windowStart, today)
-        val expensesByMonth = transactions.filter { it.type == TransactionType.EXPENSE }
+        val expensesByMonth = transactions.filter { it.type in EXPENSE_TYPES }
             .groupBy { YearMonth.from(it.date) }
             .mapValues { (_, list) -> list.sumAmount() }
         return months.map { MonthlyPoint(it, expensesByMonth[it] ?: BigDecimal.ZERO) }
