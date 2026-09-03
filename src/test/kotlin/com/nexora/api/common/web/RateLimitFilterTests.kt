@@ -44,6 +44,23 @@ class RateLimitFilterTests {
     }
 
     @Test
+    fun `forgot-password usa su propio limite, no el default`() {
+        // Default alto (nunca se dispara), forgot-password bajo (3) — confirma que
+        // pathLimits realmente distingue por path y no cae al default para éste.
+        val filter = RateLimitFilter(maxRequests = 1000, windowSeconds = 60, forgotPasswordMaxRequests = 3, forgotPasswordWindowSeconds = 900)
+
+        repeat(3) {
+            val response = MockHttpServletResponse()
+            filter.doFilter(forgotPasswordRequest(), response, MockFilterChain())
+            assertEquals(200, response.status)
+        }
+
+        val response = MockHttpServletResponse()
+        filter.doFilter(forgotPasswordRequest(), response, MockFilterChain())
+        assertEquals(429, response.status)
+    }
+
+    @Test
     fun `ips distintas tienen su propio contador`() {
         val filter = RateLimitFilter(maxRequests = 1, windowSeconds = 60)
 
@@ -58,4 +75,6 @@ class RateLimitFilterTests {
     }
 
     private fun loginRequest(): MockHttpServletRequest = MockHttpServletRequest("POST", "/api/v1/auth/login")
+
+    private fun forgotPasswordRequest(): MockHttpServletRequest = MockHttpServletRequest("POST", "/api/v1/auth/forgot-password")
 }

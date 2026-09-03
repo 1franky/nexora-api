@@ -66,4 +66,33 @@ class AuthController(
         authService.logout(request.refreshToken)
         return ResponseEntity.noContent().build()
     }
+
+    @Operation(
+        summary = "Pedir código para restablecer la contraseña",
+        description = "Envía un código de 6 dígitos por email, válido 10 minutos. La respuesta es SIEMPRE la misma exista o no una cuenta con ese email — no revela qué emails están registrados.",
+        responses = [ApiResponse(responseCode = "200", description = "Si existe una cuenta con ese email, se envió un código.")],
+    )
+    @PostMapping("/forgot-password")
+    fun forgotPassword(@Valid @RequestBody request: ForgotPasswordRequest): ResponseEntity<Void> {
+        authService.forgotPassword(request.email)
+        return ResponseEntity.ok().build()
+    }
+
+    @Operation(
+        summary = "Restablecer la contraseña con el código recibido",
+        description = "Si el código es correcto, actualiza la contraseña y cierra todas las sesiones activas del usuario (hay que loguearse de nuevo).",
+        responses = [
+            ApiResponse(responseCode = "204", description = "Contraseña actualizada."),
+            ApiResponse(
+                responseCode = "401",
+                description = "El código es inválido, expiró, ya se usó, o se agotaron los intentos.",
+                content = [Content(schema = Schema(implementation = ApiError::class))],
+            ),
+        ],
+    )
+    @PostMapping("/reset-password")
+    fun resetPassword(@Valid @RequestBody request: ResetPasswordRequest): ResponseEntity<Void> {
+        authService.resetPassword(request.email, request.code, request.newPassword)
+        return ResponseEntity.noContent().build()
+    }
 }

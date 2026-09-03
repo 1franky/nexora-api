@@ -2,6 +2,7 @@ package com.nexora.api.auth.domain
 
 import com.nexora.api.common.domain.UnauthorizedException
 import com.nexora.api.config.JwtProperties
+import com.nexora.api.email.EmailSender
 import com.nexora.api.user.domain.User
 import com.nexora.api.user.domain.UserRepository
 import com.nexora.api.user.domain.UserStatus
@@ -26,6 +27,8 @@ data class TokenPair(
     val expiresInSeconds: Long,
 )
 
+private const val PASSWORD_RESET_CODE_TTL_MINUTES = 10L
+
 /**
  * Emite y valida los tokens propios de la API: access token JWT (firmado
  * HS256, de corta duración) + refresh token opaco (sin firmar, solo su hash
@@ -38,9 +41,11 @@ data class TokenPair(
 class AuthService(
     private val userRepository: UserRepository,
     private val refreshTokenRepository: RefreshTokenRepository,
+    private val passwordResetCodeRepository: PasswordResetCodeRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtEncoder: JwtEncoder,
     private val jwtProperties: JwtProperties,
+    private val emailSender: EmailSender,
 ) {
 
     @Transactional
@@ -83,6 +88,78 @@ class AuthService(
             stored.revokedAt = Instant.now()
             refreshTokenRepository.save(stored)
         }
+    }
+
+    /**
+     * B10: genera y envía un OTP de 6 dígitos para restablecer la
+     * contraseña. Silenciosamente no hace nada si el email no corresponde a
+     * ningún usuario activo — [com.nexora.api.auth.web.AuthController]
+     * responde igual de genérico en ambos casos, para no filtrar qué emails
+     * están registrados (enumeración de usuarios).
+     */
+    @Transactional
+    fun forgotPassword(email: String) {
+        val user = userRepository.findByEmailIgnoreCase(email).orElse(null)
+        if (user == null || user.status != UserStatus.ACTIVE) return
+        val userId = requireNotNull(user.id)
+
+        // Un solo código activo por usuario: invalida los previos no usados en vez de
+        // dejarlos convivir (evita ambigüedad de "cuál es el vigente").
+        passwordResetCodeRepository.findByUserIdAndUsedAtIsNullAndExpiresAtAfter(userId, Instant.now())
+            .forEach { it.usedAt = Instant.now(); passwordResetCodeRepository.save(it) }
+
+        val code = "%06d".format(SecureRandom().nextInt(1_000_000))
+        passwordResetCodeRepository.save(
+            PasswordResetCode(
+                userId = userId,
+                codeHash = requireNotNull(passwordEncoder.encode(code)),
+                expiresAt = Instant.now().plus(PASSWORD_RESET_CODE_TTL_MINUTES, ChronoUnit.MINUTES),
+            )
+        )
+        emailSender.send(
+            to = user.email,
+            subject = "Tu código para restablecer tu contraseña en Nexora",
+            textBody = "Tu código es: $code\n\nExpira en $PASSWORD_RESET_CODE_TTL_MINUTES minutos. Si no pediste esto, ignora este correo.",
+        )
+    }
+
+    /**
+     * B10: valida el OTP y, si es correcto, actualiza la contraseña y
+     * revoca todas las sesiones activas del usuario (cualquier dispositivo
+     * logueado queda desconectado — igual que si alguien más comprometió la
+     * cuenta, este es el momento de purgar sus accesos).
+     *
+     * `noRollbackFor` es necesario: por defecto @Transactional revierte TODO
+     * en cualquier RuntimeException no capturada — sin esto, el incremento
+     * de `attempts` de un intento fallido se revertiría junto con el resto
+     * de la transacción al lanzar [UnauthorizedException], y el límite de
+     * intentos (ver [PasswordResetCode.isUsable]) nunca llegaría a cumplirse.
+     */
+    @Transactional(noRollbackFor = [UnauthorizedException::class])
+    fun resetPassword(email: String, code: String, newPassword: String) {
+        val user = userRepository.findByEmailIgnoreCase(email).orElse(null)
+            ?: throw UnauthorizedException("Código inválido o expirado.")
+        val userId = requireNotNull(user.id)
+
+        val candidates = passwordResetCodeRepository.findByUserIdAndUsedAtIsNullAndExpiresAtAfter(userId, Instant.now())
+        val match = candidates.firstOrNull { it.isUsable(Instant.now()) && passwordEncoder.matches(code, it.codeHash) }
+
+        if (match == null) {
+            // Cuenta el intento en todos los códigos activos del usuario (normalmente hay
+            // como mucho uno) — así probar códigos al azar también agota el vigente, no
+            // solo "no matcheó y ya".
+            candidates.forEach { it.attempts++; passwordResetCodeRepository.save(it) }
+            throw UnauthorizedException("Código inválido o expirado.")
+        }
+
+        match.usedAt = Instant.now()
+        passwordResetCodeRepository.save(match)
+
+        user.passwordHash = requireNotNull(passwordEncoder.encode(newPassword))
+        userRepository.save(user)
+
+        refreshTokenRepository.findByUserIdAndRevokedAtIsNull(userId)
+            .forEach { it.revokedAt = Instant.now(); refreshTokenRepository.save(it) }
     }
 
     private fun issueTokenPair(user: User): TokenPair {
