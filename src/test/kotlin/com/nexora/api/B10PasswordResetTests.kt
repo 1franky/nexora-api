@@ -20,6 +20,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.Instant
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 import kotlin.test.assertNotEquals
 
 /**
@@ -59,6 +60,10 @@ class B10PasswordResetTests {
 
         val code = fakeEmailSender.lastCodeFor(email)
         assertEquals(6, code.length)
+
+        // El correo va con versión HTML además del texto plano — mismo código en ambas.
+        val sent = fakeEmailSender.sent.last { it.to.equals(email, ignoreCase = true) }
+        assertTrue(sent.htmlBody?.contains(code) == true, "el HTML del correo debería incluir el código")
     }
 
     @Test

@@ -5,7 +5,7 @@ import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 
-data class SentEmail(val to: String, val subject: String, val textBody: String)
+data class SentEmail(val to: String, val subject: String, val textBody: String, val htmlBody: String?)
 
 /**
  * Captura los correos "enviados" en memoria en vez de pegarle a la API real
@@ -16,8 +16,8 @@ data class SentEmail(val to: String, val subject: String, val textBody: String)
 class FakeEmailSender : EmailSender {
     val sent = mutableListOf<SentEmail>()
 
-    override fun send(to: String, subject: String, textBody: String) {
-        sent += SentEmail(to, subject, textBody)
+    override fun send(to: String, subject: String, textBody: String, htmlBody: String?) {
+        sent += SentEmail(to, subject, textBody, htmlBody)
     }
 
     fun lastCodeFor(email: String): String =

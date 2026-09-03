@@ -17,7 +17,7 @@ class ResendEmailSender(private val mailProperties: MailProperties) : EmailSende
     private val log = LoggerFactory.getLogger(javaClass)
     private val client = RestClient.builder().baseUrl("https://api.resend.com").build()
 
-    override fun send(to: String, subject: String, textBody: String) {
+    override fun send(to: String, subject: String, textBody: String, htmlBody: String?) {
         // Sin API key (dev local sin ganas de gastar cuota / abrir el correo cada vez):
         // loguea en vez de enviar de verdad. Nunca pasa en prod — RESEND_API_KEY es
         // obligatorio ahí (ver .env del VPS).
@@ -26,18 +26,18 @@ class ResendEmailSender(private val mailProperties: MailProperties) : EmailSende
             return
         }
         runCatching {
+            val payload = buildMap {
+                put("from", "${mailProperties.fromName} <${mailProperties.fromAddress}>")
+                put("to", listOf(to))
+                put("subject", subject)
+                put("text", textBody)
+                if (htmlBody != null) put("html", htmlBody)
+            }
             client.post()
                 .uri("/emails")
                 .header("Authorization", "Bearer ${mailProperties.resendApiKey}")
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(
-                    mapOf(
-                        "from" to "${mailProperties.fromName} <${mailProperties.fromAddress}>",
-                        "to" to listOf(to),
-                        "subject" to subject,
-                        "text" to textBody,
-                    )
-                )
+                .body(payload)
                 .retrieve()
                 .toBodilessEntity()
         }.onFailure { log.error("Fallo enviando correo vía Resend a {}", to, it) }

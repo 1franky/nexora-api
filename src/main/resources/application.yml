@@ -54,5 +54,5 @@ nexora:
     # local = el código se loguea en vez de enviarse (ver ResendEmailSender).
     # En el VPS SIEMPRE debe tener un valor real.
     resend-api-key: ${RESEND_API_KEY:}
-    from-address: ${MAIL_FROM_ADDRESS:noreply@mail.franciscolopez.uk}
+    from-address: ${MAIL_FROM_ADDRESS:noreply@contacto.franciscolopez.uk}
     from-name: ${MAIL_FROM_NAME:Nexora}

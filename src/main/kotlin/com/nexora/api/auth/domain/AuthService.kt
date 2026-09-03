@@ -3,6 +3,7 @@ package com.nexora.api.auth.domain
 import com.nexora.api.common.domain.UnauthorizedException
 import com.nexora.api.config.JwtProperties
 import com.nexora.api.email.EmailSender
+import com.nexora.api.email.passwordResetEmailContent
 import com.nexora.api.user.domain.User
 import com.nexora.api.user.domain.UserRepository
 import com.nexora.api.user.domain.UserStatus
@@ -116,10 +117,12 @@ class AuthService(
                 expiresAt = Instant.now().plus(PASSWORD_RESET_CODE_TTL_MINUTES, ChronoUnit.MINUTES),
             )
         )
+        val content = passwordResetEmailContent(code, PASSWORD_RESET_CODE_TTL_MINUTES)
         emailSender.send(
             to = user.email,
             subject = "Tu código para restablecer tu contraseña en Nexora",
-            textBody = "Tu código es: $code\n\nExpira en $PASSWORD_RESET_CODE_TTL_MINUTES minutos. Si no pediste esto, ignora este correo.",
+            textBody = content.text,
+            htmlBody = content.html,
         )
     }
 
