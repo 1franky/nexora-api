@@ -87,6 +87,34 @@ class B5DashboardTests {
     }
 
     @Test
+    fun `una compra de tarjeta cuenta como gasto del mes, pero pagar la tarjeta no`() {
+        val auth = registerAndAuth("gastoTarjeta")
+        val accountId = createAccount(auth, "Débito", "20000")
+        val foodCategory = createCategory(auth, "Comida", "EXPENSE")
+        val cardId = createCreditCard(auth)
+
+        recordTransaction(auth, "EXPENSE", accountId, "100", foodCategory) // gasto normal (débito)
+        createPurchase(auth, cardId, "300", today, "Súper") // compra de tarjeta: también debe contar
+
+        val beforePayment = mockMvc.perform(get("/api/v1/dashboard").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertMoneyEquals("400", JsonPath.read<Any>(beforePayment, "$.expenseThisMonth").toString())
+
+        // Pagar la tarjeta no es un gasto nuevo (el gasto ya se contó al momento de la compra) —
+        // expenseThisMonth no debe cambiar tras el pago.
+        mockMvc.perform(
+            post("/api/v1/credit-cards/$cardId/payments")
+                .with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"fromAccountId":"$accountId","amount":300,"date":"$today"}""")
+        ).andExpect(status().isCreated)
+
+        val afterPayment = mockMvc.perform(get("/api/v1/dashboard").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertMoneyEquals("400", JsonPath.read<Any>(afterPayment, "$.expenseThisMonth").toString())
+    }
+
+    @Test
     fun `deuda de tarjetas, credito disponible y proximo pago se reflejan en el dashboard`() {
         val auth = registerAndAuth("tarjetadash")
         val cardId = createCreditCard(auth)
