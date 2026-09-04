@@ -47,18 +47,28 @@ private val TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:s
  *   apuntando a un `BinarySecurityToken` (perfil WS-Security X.509 Token
  *   Profile completo), no un certificado embebido directo.
  *
- * Se probaron además, sin éxito por ahora: firmar el Timestamp como
- * hermano de la Signature (no enveloped) dentro de `wsse:Security`, firmar
- * Timestamp+Body juntos (patrón típico de bindings WCF), y RSA-SHA1/SHA1 en
- * vez de SHA256 (queda así, sin confirmar, por ser la hipótesis con más
- * sustento: el protocolo es de ~2016). Con `NEXORA_SAT_DEBUG_XML=1` se
- * imprime el XML de request completo (sin datos sensibles: el certificado
- * ya es público y la firma no es reversible a la llave privada) — útil
- * para retomar la depuración. Hipótesis que faltan probar: la cadena de
- * certificación completa en el BinarySecurityToken (no solo el certificado
- * del usuario), y comparar contra un request real conocido-funcional de
- * otra herramienta (ej. capturar el tráfico de una biblioteca de
- * referencia en otro lenguaje).
+ * **Estructura verificada contra un ejemplo real documentado públicamente**
+ * (developers.sw.com.mx, "Descarga Masiva v1.5 – Autenticación") — la
+ * estructura actual coincide exactamente: orden dentro de `wsse:Security`
+ * (Timestamp, luego BinarySecurityToken, luego Signature — no al revés,
+ * como se había probado antes), solo el Timestamp firmado (no el Body,
+ * otra hipótesis descartada), RSA-SHA1 + SHA1 (no SHA256), canonicalización
+ * exclusiva sin comentarios. Con la estructura ya alineada 1:1 al ejemplo
+ * documentado, el SAT **sigue** respondiendo `InvalidSecurity` — el
+ * problema restante es más sutil que la forma del XML.
+ *
+ * Hipótesis que faltan probar (quedan para retomar con más tiempo):
+ * - Cadena de certificación completa en el `BinarySecurityToken` (solo se
+ *   incluye el certificado del usuario, no el intermedio de la AC del SAT)
+ *   — WCF a veces exige la cadena completa para poder validarla.
+ * - Comparar byte a byte contra el request real de una librería que sí
+ *   funcione (ej. `phpcfdi/sat-ws-descarga-masiva`, PHP) — no fue posible
+ *   ejecutarla en esta sesión (requiere PHP + Composer, no disponibles),
+ *   pero es la forma más confiable de encontrar la diferencia exacta.
+ *
+ * Con `NEXORA_SAT_DEBUG_XML=1` se imprime el XML de request completo (sin
+ * datos sensibles: el certificado ya es público y la firma no es
+ * reversible a la llave privada) — útil para retomar la depuración.
  *
  * Las URLs de los 3 endpoints y los namespaces de las operaciones
  * (`AUTH_NS`/`TYPES_NS`) parecen correctos — el SAT sí reconoce la
@@ -95,21 +105,12 @@ class SatWsDescargaMasivaClient(
             header.appendChild(it)
         }
 
-        // El SAT exige el perfil WS-Security X.509 Token Profile completo: un
-        // BinarySecurityToken con el certificado, referenciado desde el
-        // KeyInfo de la firma vía SecurityTokenReference — con el
-        // certificado embebido directo en KeyInfo (la forma "simple" de
-        // XMLDSig) el SAT responde `a:InvalidSecurity` aunque la firma en sí
-        // sea válida. Verificado contra el SAT real.
-        val bstId = "_bst-${UUID.randomUUID()}"
-        document.createElementNS(WSSE_NS, "o:BinarySecurityToken").also {
-            it.setAttributeNS(WSU_NS, "u:Id", bstId)
-            it.setAttribute("ValueType", SatXmlSignatureService.X509_V3_VALUE_TYPE)
-            it.setAttribute("EncodingType", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary")
-            it.textContent = Base64.getEncoder().encodeToString(certificate.encoded)
-            security.appendChild(it)
-        }
-
+        // Orden exacto dentro de o:Security — confirmado contra un ejemplo
+        // real documentado públicamente (developers.sw.com.mx, "Descarga
+        // Masiva v1.5 – Autenticación"): Timestamp primero, luego
+        // BinarySecurityToken, luego Signature. El orden invertido
+        // (BinarySecurityToken antes que Timestamp, que se había probado
+        // primero por instinto) es una causa real de InvalidSecurity.
         val timestampId = "_ts-${UUID.randomUUID()}"
         val now = Instant.now()
         val timestamp = document.createElementNS(WSU_NS, "u:Timestamp").also {
@@ -131,17 +132,28 @@ class SatWsDescargaMasivaClient(
             timestamp.appendChild(it)
         }
 
-        // Se firma el Timestamp junto con el Body (no solo el Timestamp) —
-        // el patrón típico de los bindings de seguridad de mensaje de WCF,
-        // que es lo que expone el SAT en este servicio.
-        val bodyId = "_body-${UUID.randomUUID()}"
-        val body = document.createElementNS(SOAP_NS, "s:Body").also {
-            it.setAttributeNS(WSU_NS, "u:Id", bodyId)
-            envelope.appendChild(it)
+        // El SAT exige el perfil WS-Security X.509 Token Profile completo: un
+        // BinarySecurityToken con el certificado, referenciado desde el
+        // KeyInfo de la firma vía SecurityTokenReference — con el
+        // certificado embebido directo en KeyInfo (la forma "simple" de
+        // XMLDSig) el SAT responde `a:InvalidSecurity` aunque la firma en sí
+        // sea válida. Verificado contra el SAT real.
+        val bstId = "_bst-${UUID.randomUUID()}"
+        document.createElementNS(WSSE_NS, "o:BinarySecurityToken").also {
+            it.setAttributeNS(WSU_NS, "u:Id", bstId)
+            it.setAttribute("ValueType", SatXmlSignatureService.X509_V3_VALUE_TYPE)
+            it.setAttribute("EncodingType", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary")
+            it.textContent = Base64.getEncoder().encodeToString(certificate.encoded)
+            security.appendChild(it)
         }
+
+        val body = document.createElementNS(SOAP_NS, "s:Body").also(envelope::appendChild)
         document.createElementNS(AUTH_NS, "Autentica").also(body::appendChild)
 
-        signer.signWsSecurityHeader(document, security, listOf(timestamp to timestampId, body to bodyId), bstId, privateKey)
+        // Solo el Timestamp va firmado — no el Body (se había probado
+        // firmar ambos por instinto, pero el ejemplo real de referencia
+        // firma únicamente el Timestamp).
+        signer.signWsSecurityHeader(document, security, listOf(timestamp to timestampId), bstId, privateKey)
 
         val requestXml = toXmlString(document)
         if (System.getenv("NEXORA_SAT_DEBUG_XML") == "1") println("REQUEST XML:\n$requestXml")
