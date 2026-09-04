@@ -161,7 +161,7 @@ class SatSyncService(
         val verificacion = pollVerificacion(token, solicitud.idSolicitud, certificate.rfc, x509, privateKey)
         downloadRequest.estado = verificacion.estado
         if (verificacion.estado != SatDownloadRequestStatus.TERMINADA) {
-            fail(downloadRequest, verificacion.mensaje)
+            fail(downloadRequest, "CodEstatus=${verificacion.codigoEstatus}: ${verificacion.mensaje}")
             return 0
         }
         downloadRequest.idsPaquetes = verificacion.idsPaquetes.joinToString(",")
@@ -173,11 +173,22 @@ class SatSyncService(
         }
     }
 
+    /**
+     * Siempre espera antes de cada intento, incluido el primero: verificar
+     * justo después de que SolicitaDescarga aceptó la solicitud (mismo
+     * segundo) hace que el SAT todavía no tenga el folio listo para
+     * consultar — responde con un EstadoSolicitud vacío/no reconocido
+     * (mapEstado lo clasifica como ERROR, ver SatWsDescargaMasivaClient) y un
+     * Mensaje genérico ("Solicitud Aceptada", el de la respuesta anterior),
+     * así que el poll se rendía en el primer intento sin haber esperado nada
+     * — confirmado en producción: EMITIDAS terminaba en ~1s con ese mensaje,
+     * en vez de tardar los minutos reales que toma el SAT en procesar.
+     */
     private fun pollVerificacion(token: String, idSolicitud: String, rfc: String, x509: X509Certificate, privateKey: PrivateKey): SatVerificacionResult {
         var attempts = 0
         var result: SatVerificacionResult
         do {
-            if (attempts > 0) Thread.sleep(properties.pollIntervalSeconds * 1000)
+            Thread.sleep(properties.pollIntervalSeconds * 1000)
             result = soapClient.verificarSolicitud(token, idSolicitud, rfc, x509, privateKey)
             attempts++
         } while (

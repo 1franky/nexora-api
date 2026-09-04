@@ -19,6 +19,7 @@ import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc
 import org.springframework.context.annotation.Import
 import org.springframework.mock.web.MockMultipartFile
+import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
@@ -41,6 +42,12 @@ import kotlin.test.assertTrue
 @SpringBootTest
 @AutoConfigureMockMvc
 @Import(TestcontainersConfiguration::class, TestSatSoapClientConfig::class)
+// pollVerificacion ahora siempre espera nexora.sat.poll-interval-seconds antes
+// de cada intento, incluido el primero (ver SatSyncService) — con el default
+// de producción (30s) estos tests reventarían el timeout de
+// waitForFirstAsyncSync (5s) sin aportar nada, ya que FakeSatSoapClient
+// responde instantáneo.
+@TestPropertySource(properties = ["nexora.sat.poll-interval-seconds=0"])
 class B11SatIntegrationTests {
 
     @Autowired
