@@ -1,5 +1,6 @@
 {
   "endpoints": [
+    "DELETE /api/v1/sat/certificate",
     "DELETE /api/v1/transactions/{id}",
     "GET /api/v1/accounts",
     "GET /api/v1/accounts/summary",
@@ -13,6 +14,9 @@
     "GET /api/v1/installment-plans/{id}",
     "GET /api/v1/notifications",
     "GET /api/v1/reports",
+    "GET /api/v1/sat/certificate",
+    "GET /api/v1/sat/invoices",
+    "GET /api/v1/sat/invoices/{id}/xml",
     "GET /api/v1/transactions",
     "GET /api/v1/users/me",
     "PATCH /api/v1/categories/{id}",
@@ -32,6 +36,8 @@
     "POST /api/v1/installment-plans/{id}/installments/{installmentId}/pay",
     "POST /api/v1/notifications/read-all",
     "POST /api/v1/notifications/{id}/read",
+    "POST /api/v1/sat/certificate",
+    "POST /api/v1/sat/sync",
     "POST /api/v1/transactions",
     "POST /api/v1/transfers",
     "POST /api/v1/users",
@@ -85,6 +91,24 @@
       "name",
       "status",
       "type"
+    ],
+    "CfdiInvoiceResponse": [
+      "estadoSat",
+      "fechaEmision",
+      "formaPago",
+      "id",
+      "iva",
+      "metodoPago",
+      "moneda",
+      "nombreEmisor",
+      "nombreReceptor",
+      "rfcEmisor",
+      "rfcReceptor",
+      "subtotal",
+      "tipo",
+      "total",
+      "usoCfdi",
+      "uuidFiscal"
     ],
     "CreateAccountRequest": [
       "currency",
@@ -240,6 +264,27 @@
       "title",
       "type"
     ],
+    "PageCfdiInvoiceResponse": [
+      "content",
+      "empty",
+      "first",
+      "last",
+      "number",
+      "numberOfElements",
+      "pageable",
+      "size",
+      "sort",
+      "totalElements",
+      "totalPages"
+    ],
+    "PageableObject": [
+      "offset",
+      "pageNumber",
+      "pageSize",
+      "paged",
+      "sort",
+      "unpaged"
+    ],
     "RefreshRequest": [
       "refreshToken"
     ],
@@ -264,6 +309,21 @@
       "code",
       "email",
       "newPassword"
+    ],
+    "SatCertificateResponse": [
+      "lastSyncAt",
+      "rfc",
+      "status",
+      "validUntil"
+    ],
+    "SortObject": [
+      "empty",
+      "sorted",
+      "unsorted"
+    ],
+    "SyncRequest": [
+      "desde",
+      "hasta"
     ],
     "TokenResponse": [
       "accessToken",
