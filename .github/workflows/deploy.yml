@@ -23,8 +23,15 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ubuntu
           key: ${{ secrets.VPS_DEPLOY_KEY }}
+          # -H (no -i): "sudo -u francisco -i <comando>" tiene un gotcha real
+          # de sudo — con -i y un comando final, sudo reconstruye el argv como
+          # un solo string ANTES de pasarlo al shell de login, perdiendo las
+          # comillas que agrupan este script multilínea (se verificó a mano
+          # contra el VPS real: con -i, "cd" nunca se aplicaba). "-H" fija
+          # $HOME a la del usuario (igual que necesita git/docker) sin ese
+          # problema de reconstrucción de argv.
           script: |
-            sudo -u francisco -i bash -c '
+            sudo -H -u francisco bash -c '
               set -e
               cd /home/francisco/docker/nexora/nexora-api
               git pull origin main
