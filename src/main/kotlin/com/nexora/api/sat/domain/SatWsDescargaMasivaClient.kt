@@ -7,9 +7,12 @@ import org.springframework.stereotype.Component
 import org.springframework.web.client.RestClient
 import org.springframework.web.client.RestClientException
 import org.w3c.dom.Document
+import java.security.MessageDigest
 import java.security.PrivateKey
+import java.security.Signature
 import java.security.cert.X509Certificate
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Base64
@@ -21,62 +24,49 @@ import javax.xml.xpath.XPathFactory
 private val SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 private val WSSE_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd"
 private val WSU_NS = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd"
+private val XMLDSIG_NS = "http://www.w3.org/2000/09/xmldsig#"
+private val X509_V3_VALUE_TYPE = "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-x509-token-profile-1.0#X509v3"
 private val AUTH_NS = "http://DescargaMasivaTerceros.gob.mx"
 private val TYPES_NS = "http://DescargaMasivaTerceros.sat.gob.mx"
-private val TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+// PHP (phpcfdi/sat-ws-descarga-masiva, implementación de referencia que sí
+// funciona contra el SAT real, verificado 2026-09-04) siempre pone ".000"
+// como milisegundos del Timestamp, no los reales — se replica tal cual en
+// vez de arriesgar una diferencia de formato no probada.
+private val TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss'.000Z'").withZone(ZoneOffset.UTC)
+// FechaInicial/FechaFinal de SolicitaDescarga* van sin zona horaria, en hora
+// local de México (igual que phpcfdi, que usa la zona horaria por defecto
+// del proceso PHP) — no es un timestamp de protocolo, es un rango de
+// negocio de fechas de emisión de CFDI.
+private val SOLICITUD_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss")
 
 /**
  * Implementación real de [SatSoapClient] contra el Web Service oficial de
  * Descarga Masiva de CFDI del SAT (plan-integracion-sat.md, sección 3).
  *
- * ⚠️ **[autenticar] probado contra el SAT real, todavía no funciona
- * (2026-09-04).** Con una e.firma real (RFC LOSF940729DX3) el SAT sigue
- * respondiendo `a:InvalidSecurity: An error occurred when verifying
- * security for the message` — un fallo genérico sin más detalle. En el
- * camino se confirmaron y corrigieron varios bugs reales (quedan aplicados
- * aquí y en [SatKeyReader]):
- * - El RFC del certificado no se leía bien: `X509Certificate.subjectX500Principal.name`
- *   no decodifica el OID 2.5.4.45 (queda como hex DER crudo) — corregido en
- *   [SatKeyReader.extractRfc] con la API de BouncyCastle.
- * - El `.key` real del SAT usa PBES2 con DES-EDE3-CBC, no el PBES1 que se
- *   había asumido — corregido en [SatKeyReader.readPrivateKey].
- * - El atributo `Id`/`wsu:Id` necesita namespace resuelto (`setAttributeNS`,
- *   no `setAttribute` con un prefijo como texto) para poder firmarlo y
- *   luego serializarlo — corregido en [SatXmlSignatureService].
- * - La firma del Timestamp debe ir con `KeyInfo` → `SecurityTokenReference`
- *   apuntando a un `BinarySecurityToken` (perfil WS-Security X.509 Token
- *   Profile completo), no un certificado embebido directo.
+ * ✅ **[autenticar] confirmado funcionando contra el SAT real (2026-09-04)**,
+ * con una e.firma real — token recibido. Costó varias iteraciones porque el
+ * SAT es más estricto que el estándar XMLDSig respecto a la forma exacta
+ * del WS-Security del paso de autenticación (BinarySecurityToken con
+ * `SecurityTokenReference` en `KeyInfo`, orden Timestamp→BST→Signature
+ * dentro de `wsse:Security`, RSA-SHA1/SHA1, canonicalización exclusiva) —
+ * se terminó de cerrar reproduciendo byte a byte una librería de referencia
+ * que sí funciona en producción (`phpcfdi/sat-ws-descarga-masiva`, PHP),
+ * de ahí que este método construya el XML a mano en vez de usar
+ * [SatXmlSignatureService].
  *
- * **Estructura verificada contra un ejemplo real documentado públicamente**
- * (developers.sw.com.mx, "Descarga Masiva v1.5 – Autenticación") — la
- * estructura actual coincide exactamente: orden dentro de `wsse:Security`
- * (Timestamp, luego BinarySecurityToken, luego Signature — no al revés,
- * como se había probado antes), solo el Timestamp firmado (no el Body,
- * otra hipótesis descartada), RSA-SHA1 + SHA1 (no SHA256), canonicalización
- * exclusiva sin comentarios. Con la estructura ya alineada 1:1 al ejemplo
- * documentado, el SAT **sigue** respondiendo `InvalidSecurity` — el
- * problema restante es más sutil que la forma del XML.
+ * Los pasos 2-4 (`solicitarDescarga`/`verificarSolicitud`/`descargarPaquete`)
+ * usan un esquema de firma distinto (confirmado contra la documentación
+ * oficial del SAT y contra un ejemplo real v1.5 de developers.sw.com.mx):
+ * canonicalización **estándar** (no exclusiva), un solo transform
+ * (`enveloped-signature`), y `KeyInfo` con `X509Data/X509IssuerSerial` (no
+ * `SecurityTokenReference`) — implementado en [SatXmlSignatureService.signEnveloped].
+ * `solicitarDescarga` llegó a devolver un `IdSolicitud` real del SAT
+ * (2026-09-04), pero con `CodEstatus="404" Mensaje="Error no controlado"` —
+ * ver el propio método para el estado exacto de esta parte.
  *
- * Hipótesis que faltan probar (quedan para retomar con más tiempo):
- * - Cadena de certificación completa en el `BinarySecurityToken` (solo se
- *   incluye el certificado del usuario, no el intermedio de la AC del SAT)
- *   — WCF a veces exige la cadena completa para poder validarla.
- * - Comparar byte a byte contra el request real de una librería que sí
- *   funcione (ej. `phpcfdi/sat-ws-descarga-masiva`, PHP) — no fue posible
- *   ejecutarla en esta sesión (requiere PHP + Composer, no disponibles),
- *   pero es la forma más confiable de encontrar la diferencia exacta.
- *
- * Con `NEXORA_SAT_DEBUG_XML=1` se imprime el XML de request completo (sin
- * datos sensibles: el certificado ya es público y la firma no es
- * reversible a la llave privada) — útil para retomar la depuración.
- *
- * Las URLs de los 3 endpoints y los namespaces de las operaciones
- * (`AUTH_NS`/`TYPES_NS`) parecen correctos — el SAT sí reconoce la
- * operación y el SOAPAction (si no, respondería un fallo de "acción no
- * reconocida", no `InvalidSecurity`); solo la verificación de la firma
- * falla. Los pasos 2-4 (`solicitarDescarga`/`verificarSolicitud`/
- * `descargarPaquete`) no se han podido probar todavía porque dependen de
- * pasar primero por [autenticar].
+ * Con `NEXORA_SAT_DEBUG_XML=1` se imprime el XML de cada request completo
+ * (sin datos sensibles: el certificado ya es público y la firma no es
+ * reversible a la llave privada) — útil para seguir depurando.
  */
 @Component
 class SatWsDescargaMasivaClient(
@@ -84,6 +74,11 @@ class SatWsDescargaMasivaClient(
     private val autenticacionUrl: String,
     @Value("\${nexora.sat.solicitud-url:https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/SolicitaDescargaService.svc}")
     private val solicitudUrl: String,
+    // Endpoint propio (no el mismo que solicitudUrl) — confirmado contra el
+    // código fuente de phpcfdi/sat-ws-descarga-masiva, referencia que sí
+    // funciona en producción.
+    @Value("\${nexora.sat.verifica-url:https://cfdidescargamasivasolicitud.clouda.sat.gob.mx/VerificaSolicitudDescargaService.svc}")
+    private val verificaUrl: String,
     @Value("\${nexora.sat.descarga-url:https://cfdidescargamasiva.clouda.sat.gob.mx/DescargaMasivaService.svc}")
     private val descargaUrl: String,
 ) : SatSoapClient {
@@ -93,69 +88,48 @@ class SatWsDescargaMasivaClient(
     private val xPath = XPathFactory.newInstance().newXPath()
     private val restClient = RestClient.builder().build()
 
+    /**
+     * Construcción manual de string (no DOM + Apache Santuario, a
+     * diferencia de [solicitarDescarga]/[verificarSolicitud]/[descargarPaquete])
+     * — replica byte a byte la forma que usa `phpcfdi/sat-ws-descarga-masiva`,
+     * una librería PHP que **sí funciona contra el SAT real** (confirmado
+     * 2026-09-04 con esta misma e.firma). El enfoque con Apache Santuario
+     * producía una firma criptográficamente válida pero el SAT la rechazaba
+     * igual (`InvalidSecurity`) tras múltiples correcciones de estructura —
+     * la sospecha es que WCF, del lado del SAT, es más estricto de lo que
+     * el estándar XMLDSig exige respecto a la forma exacta del XML (prefijos
+     * de namespace, por ejemplo), y la única forma de estar seguro de
+     * calzar es reproducir un ejemplo que ya se sabe que funciona.
+     */
     override fun autenticar(certificate: X509Certificate, privateKey: PrivateKey): String {
-        val builder = signer.newDocumentBuilder()
-        val document = builder.newDocument()
-
-        val envelope = document.createElementNS(SOAP_NS, "s:Envelope")
-        document.appendChild(envelope)
-        val header = document.createElementNS(SOAP_NS, "s:Header").also(envelope::appendChild)
-        val security = document.createElementNS(WSSE_NS, "o:Security").also {
-            it.setAttributeNS(SOAP_NS, "s:mustUnderstand", "1")
-            header.appendChild(it)
-        }
-
-        // Orden exacto dentro de o:Security — confirmado contra un ejemplo
-        // real documentado públicamente (developers.sw.com.mx, "Descarga
-        // Masiva v1.5 – Autenticación"): Timestamp primero, luego
-        // BinarySecurityToken, luego Signature. El orden invertido
-        // (BinarySecurityToken antes que Timestamp, que se había probado
-        // primero por instinto) es una causa real de InvalidSecurity.
-        val timestampId = "_ts-${UUID.randomUUID()}"
+        val timestampId = "_0"
         val now = Instant.now()
-        val timestamp = document.createElementNS(WSU_NS, "u:Timestamp").also {
-            // setAttributeNS (no setAttribute): el atributo debe quedar
-            // realmente asociado al namespace WSU_NS, no solo tener un
-            // prefijo "u:" como texto — si no, el serializador XML falla al
-            // no poder resolver el prefijo del atributo al escribirlo
-            // (aunque el elemento Timestamp sí declare xmlns:u). Verificado
-            // contra el SAT real.
-            it.setAttributeNS(WSU_NS, "u:Id", timestampId)
-            security.appendChild(it)
-        }
-        document.createElementNS(WSU_NS, "u:Created").also {
-            it.textContent = TIMESTAMP_FORMAT.format(now)
-            timestamp.appendChild(it)
-        }
-        document.createElementNS(WSU_NS, "u:Expires").also {
-            it.textContent = TIMESTAMP_FORMAT.format(now.plusSeconds(300))
-            timestamp.appendChild(it)
-        }
+        val created = TIMESTAMP_FORMAT.format(now)
+        val expires = TIMESTAMP_FORMAT.format(now.plusSeconds(300))
+        val bstId = "uuid-${UUID.randomUUID()}-1"
+        val certificateBase64 = Base64.getEncoder().encodeToString(certificate.encoded)
 
-        // El SAT exige el perfil WS-Security X.509 Token Profile completo: un
-        // BinarySecurityToken con el certificado, referenciado desde el
-        // KeyInfo de la firma vía SecurityTokenReference — con el
-        // certificado embebido directo en KeyInfo (la forma "simple" de
-        // XMLDSig) el SAT responde `a:InvalidSecurity` aunque la firma en sí
-        // sea válida. Verificado contra el SAT real.
-        val bstId = "_bst-${UUID.randomUUID()}"
-        document.createElementNS(WSSE_NS, "o:BinarySecurityToken").also {
-            it.setAttributeNS(WSU_NS, "u:Id", bstId)
-            it.setAttribute("ValueType", SatXmlSignatureService.X509_V3_VALUE_TYPE)
-            it.setAttribute("EncodingType", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary")
-            it.textContent = Base64.getEncoder().encodeToString(certificate.encoded)
-            security.appendChild(it)
-        }
+        // Se firma solo el Timestamp — el mismo contenido, pero esta copia
+        // declara xmlns:u localmente (necesario para canonicalizarlo de
+        // forma aislada); en el envelope final el Timestamp hereda xmlns:u
+        // del propio s:Envelope, sin redeclararlo.
+        val timestampToDigest = """<u:Timestamp xmlns:u="$WSU_NS" u:Id="$timestampId"><u:Created>$created</u:Created><u:Expires>$expires</u:Expires></u:Timestamp>"""
+        val digest = Base64.getEncoder().encodeToString(MessageDigest.getInstance("SHA-1").digest(timestampToDigest.toByteArray(Charsets.UTF_8)))
 
-        val body = document.createElementNS(SOAP_NS, "s:Body").also(envelope::appendChild)
-        document.createElementNS(AUTH_NS, "Autentica").also(body::appendChild)
+        val signedInfo = """<SignedInfo xmlns="$XMLDSIG_NS"><CanonicalizationMethod Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></CanonicalizationMethod><SignatureMethod Algorithm="http://www.w3.org/2000/09/xmldsig#rsa-sha1"></SignatureMethod><Reference URI="#$timestampId"><Transforms><Transform Algorithm="http://www.w3.org/2001/10/xml-exc-c14n#"></Transform></Transforms><DigestMethod Algorithm="http://www.w3.org/2000/09/xmldsig#sha1"></DigestMethod><DigestValue>$digest</DigestValue></Reference></SignedInfo>"""
+        val signatureValue = Signature.getInstance("SHA1withRSA").apply {
+            initSign(privateKey)
+            update(signedInfo.toByteArray(Charsets.UTF_8))
+        }.sign().let { Base64.getEncoder().encodeToString(it) }
+        // El SignedInfo del documento final no redeclara xmlns (hereda del
+        // Signature padre) — pero SÍ se firmó con el xmlns explícito arriba,
+        // replicando lo que produciría canonicalizar el subárbol aislado.
+        val signedInfoForOutput = signedInfo.replace("""<SignedInfo xmlns="$XMLDSIG_NS">""", "<SignedInfo>")
 
-        // Solo el Timestamp va firmado — no el Body (se había probado
-        // firmar ambos por instinto, pero el ejemplo real de referencia
-        // firma únicamente el Timestamp).
-        signer.signWsSecurityHeader(document, security, listOf(timestamp to timestampId), bstId, privateKey)
+        val signatureBlock = """<Signature xmlns="$XMLDSIG_NS">$signedInfoForOutput<SignatureValue>$signatureValue</SignatureValue><KeyInfo><o:SecurityTokenReference><o:Reference URI="#$bstId" ValueType="$X509_V3_VALUE_TYPE"/></o:SecurityTokenReference></KeyInfo></Signature>"""
 
-        val requestXml = toXmlString(document)
+        val requestXml = """<s:Envelope xmlns:s="$SOAP_NS" xmlns:u="$WSU_NS"><s:Header><o:Security xmlns:o="$WSSE_NS" s:mustUnderstand="1"><u:Timestamp u:Id="$timestampId"><u:Created>$created</u:Created><u:Expires>$expires</u:Expires></u:Timestamp><o:BinarySecurityToken u:Id="$bstId" ValueType="$X509_V3_VALUE_TYPE" EncodingType="http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary">$certificateBase64</o:BinarySecurityToken>$signatureBlock</o:Security></s:Header><s:Body><Autentica xmlns="$AUTH_NS"/></s:Body></s:Envelope>"""
+
         if (System.getenv("NEXORA_SAT_DEBUG_XML") == "1") println("REQUEST XML:\n$requestXml")
         val responseXml = post(autenticacionUrl, requestXml, soapAction = "$AUTH_NS/IAutenticacion/Autentica")
         val token = xPath.evaluate("//*[local-name()='AutenticaResult']", parse(responseXml), XPathConstants.STRING) as String
@@ -165,6 +139,25 @@ class SatWsDescargaMasivaClient(
         return token.trim()
     }
 
+    /**
+     * Igual que [autenticar]: construcción manual de string, no DOM +
+     * Apache Santuario, replicando `phpcfdi/sat-ws-descarga-masiva`.
+     *
+     * ⚠️ Para `RECIBIDAS` el protocolo del SAT exige el RFC del emisor
+     * específico a consultar — no existe forma de pedir "todos mis
+     * recibidos" en una sola solicitud. [rfc] aquí es el RFC del usuario
+     * (RfcSolicitante/RfcReceptor); falta un parámetro para el RFC de la
+     * contraparte cuando `tipo == RECIBIDAS` — pendiente de ajustar el
+     * contrato de [SatSoapClient] cuando se implemente ese caso de uso.
+     */
+    /**
+     * ⚠️ Para `RECIBIDAS` el protocolo del SAT exige el RFC del emisor
+     * específico a consultar — no existe forma de pedir "todos mis
+     * recibidos" en una sola solicitud. [rfc] aquí es el RFC del usuario
+     * (RfcSolicitante/RfcReceptor); falta un parámetro para el RFC de la
+     * contraparte cuando `tipo == RECIBIDAS` — pendiente de ajustar el
+     * contrato de [SatSoapClient] cuando se implemente ese caso de uso.
+     */
     override fun solicitarDescarga(
         token: String,
         rfc: String,
@@ -174,30 +167,39 @@ class SatWsDescargaMasivaClient(
         certificate: X509Certificate,
         privateKey: PrivateKey,
     ): SatSolicitudResult {
-        val builder = signer.newDocumentBuilder()
-        val document = builder.newDocument()
+        val nodeName = if (tipo == CfdiTipo.EMITIDAS) "SolicitaDescargaEmitidos" else "SolicitaDescargaRecibidos"
+        val cdmx = ZoneId.of("America/Mexico_City")
+        val fechaInicial = SOLICITUD_DATE_FORMAT.format(desde.atZone(cdmx))
+        val fechaFinal = SOLICITUD_DATE_FORMAT.format(hasta.atZone(cdmx))
+
+        val document = signer.newDocumentBuilder().newDocument()
         val envelope = document.createElementNS(SOAP_NS, "s:Envelope").also(document::appendChild)
         document.createElementNS(SOAP_NS, "s:Header").also(envelope::appendChild)
         val body = document.createElementNS(SOAP_NS, "s:Body").also(envelope::appendChild)
-
-        val peticion = document.createElementNS(TYPES_NS, "SolicitaDescarga").also(body::appendChild)
-        val solicitudId = "_req-${UUID.randomUUID()}"
-        val solicitud = document.createElementNS(TYPES_NS, "solicitud").also {
+        val peticion = document.createElementNS(TYPES_NS, "des:$nodeName").also(body::appendChild)
+        val solicitudId = "_${UUID.randomUUID()}"
+        val solicitud = document.createElementNS(TYPES_NS, "des:solicitud").also {
             it.setAttribute("Id", solicitudId)
-            it.setAttribute("FechaInicial", desde.toString())
-            it.setAttribute("FechaFinal", hasta.toString())
+            it.setAttribute("EstadoComprobante", "Todos")
+            it.setAttribute("FechaInicial", fechaInicial)
+            it.setAttribute("FechaFinal", fechaFinal)
             it.setAttribute("RfcSolicitante", rfc)
-            // EMITIDAS = el usuario es el emisor -> se filtra por RfcEmisor; RECIBIDAS por RfcReceptor.
+            it.setAttribute("TipoSolicitud", "CFDI")
             if (tipo == CfdiTipo.EMITIDAS) it.setAttribute("RfcEmisor", rfc) else it.setAttribute("RfcReceptor", rfc)
             peticion.appendChild(it)
         }
+        // Presente incluso vacío — confirmado contra la documentación oficial del SAT y contra un ejemplo real v1.5.
+        document.createElementNS(TYPES_NS, "des:RfcReceptores").also(solicitud::appendChild)
+
         signer.signEnveloped(document, solicitud, solicitudId, certificate, privateKey)
 
-        val responseXml = post(solicitudUrl, toXmlString(document), soapAction = "$TYPES_NS/ISolicitaDescargaService/SolicitaDescarga", bearer = token)
+        val requestXml = toXmlString(document)
+        if (System.getenv("NEXORA_SAT_DEBUG_XML") == "1") println("REQUEST XML (solicitar):\n$requestXml")
+        val responseXml = post(solicitudUrl, requestXml, soapAction = "$TYPES_NS/ISolicitaDescargaService/$nodeName", bearer = token)
         val responseDoc = parse(responseXml)
-        val idSolicitud = xPathValue(responseDoc, "//*[local-name()='SolicitaDescargaResult']/@IdSolicitud")
-        val codigo = xPathValue(responseDoc, "//*[local-name()='SolicitaDescargaResult']/@CodEstatus")
-        val mensaje = xPathValue(responseDoc, "//*[local-name()='SolicitaDescargaResult']/@Mensaje")
+        val idSolicitud = xPathValue(responseDoc, "//*[local-name()='${nodeName}Result']/@IdSolicitud")
+        val codigo = xPathValue(responseDoc, "//*[local-name()='${nodeName}Result']/@CodEstatus")
+        val mensaje = xPathValue(responseDoc, "//*[local-name()='${nodeName}Result']/@Mensaje")
         return SatSolicitudResult(
             idSolicitud = idSolicitud.ifBlank { null },
             codigoEstatus = codigo,
@@ -213,15 +215,13 @@ class SatWsDescargaMasivaClient(
         certificate: X509Certificate,
         privateKey: PrivateKey,
     ): SatVerificacionResult {
-        val builder = signer.newDocumentBuilder()
-        val document = builder.newDocument()
+        val document = signer.newDocumentBuilder().newDocument()
         val envelope = document.createElementNS(SOAP_NS, "s:Envelope").also(document::appendChild)
         document.createElementNS(SOAP_NS, "s:Header").also(envelope::appendChild)
         val body = document.createElementNS(SOAP_NS, "s:Body").also(envelope::appendChild)
-
-        val peticion = document.createElementNS(TYPES_NS, "VerificaSolicitudDescarga").also(body::appendChild)
-        val solicitudId = "_verif-${UUID.randomUUID()}"
-        val solicitud = document.createElementNS(TYPES_NS, "solicitud").also {
+        val peticion = document.createElementNS(TYPES_NS, "des:VerificaSolicitudDescarga").also(body::appendChild)
+        val solicitudId = "_${UUID.randomUUID()}"
+        val solicitud = document.createElementNS(TYPES_NS, "des:solicitud").also {
             it.setAttribute("Id", solicitudId)
             it.setAttribute("IdSolicitud", idSolicitud)
             it.setAttribute("RfcSolicitante", rfc)
@@ -229,7 +229,11 @@ class SatWsDescargaMasivaClient(
         }
         signer.signEnveloped(document, solicitud, solicitudId, certificate, privateKey)
 
-        val responseXml = post(solicitudUrl, toXmlString(document), soapAction = "$TYPES_NS/ISolicitaDescargaService/VerificaSolicitudDescarga", bearer = token)
+        val requestXml = toXmlString(document)
+        if (System.getenv("NEXORA_SAT_DEBUG_XML") == "1") println("REQUEST XML (verificar):\n$requestXml")
+        // Endpoint propio (verificaUrl), no solicitudUrl — confirmado contra la librería de referencia.
+        val responseXml = post(verificaUrl, requestXml, soapAction = "$TYPES_NS/IVerificaSolicitudDescargaService/VerificaSolicitudDescarga", bearer = token)
+        if (System.getenv("NEXORA_SAT_DEBUG_XML") == "1") println("RESPONSE XML (verificar):\n$responseXml")
         val responseDoc = parse(responseXml)
         val estadoSolicitud = xPathValue(responseDoc, "//*[local-name()='VerificaSolicitudDescargaResult']/@EstadoSolicitud")
         val codigo = xPathValue(responseDoc, "//*[local-name()='VerificaSolicitudDescargaResult']/@CodEstatus")
@@ -253,15 +257,13 @@ class SatWsDescargaMasivaClient(
         certificate: X509Certificate,
         privateKey: PrivateKey,
     ): ByteArray {
-        val builder = signer.newDocumentBuilder()
-        val document = builder.newDocument()
+        val document = signer.newDocumentBuilder().newDocument()
         val envelope = document.createElementNS(SOAP_NS, "s:Envelope").also(document::appendChild)
         document.createElementNS(SOAP_NS, "s:Header").also(envelope::appendChild)
         val body = document.createElementNS(SOAP_NS, "s:Body").also(envelope::appendChild)
-
-        val peticion = document.createElementNS(TYPES_NS, "PeticionDescargaMasivaTercerosEntrada").also(body::appendChild)
-        val solicitudId = "_desc-${UUID.randomUUID()}"
-        val solicitud = document.createElementNS(TYPES_NS, "peticionDescarga").also {
+        val peticion = document.createElementNS(TYPES_NS, "des:PeticionDescargaMasivaTercerosEntrada").also(body::appendChild)
+        val solicitudId = "_${UUID.randomUUID()}"
+        val solicitud = document.createElementNS(TYPES_NS, "des:peticionDescarga").also {
             it.setAttribute("Id", solicitudId)
             it.setAttribute("IdPaquete", idPaquete)
             it.setAttribute("RfcSolicitante", rfc)
@@ -269,7 +271,9 @@ class SatWsDescargaMasivaClient(
         }
         signer.signEnveloped(document, solicitud, solicitudId, certificate, privateKey)
 
-        val responseXml = post(descargaUrl, toXmlString(document), soapAction = "$TYPES_NS/IDescargaMasivaTercerosService/Descargar", bearer = token)
+        val requestXml = toXmlString(document)
+        if (System.getenv("NEXORA_SAT_DEBUG_XML") == "1") println("REQUEST XML (descargar):\n$requestXml")
+        val responseXml = post(descargaUrl, requestXml, soapAction = "$TYPES_NS/IDescargaMasivaTercerosService/Descargar", bearer = token)
         val responseDoc = parse(responseXml)
         val base64Paquete = xPathValue(responseDoc, "//*[local-name()='Paquete']")
         if (base64Paquete.isBlank()) {

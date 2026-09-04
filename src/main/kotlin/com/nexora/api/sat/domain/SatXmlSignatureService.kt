@@ -3,8 +3,11 @@ package com.nexora.api.sat.domain
 import org.apache.xml.security.Init
 import org.apache.xml.security.algorithms.MessageDigestAlgorithm
 import org.apache.xml.security.c14n.Canonicalizer
+import org.apache.xml.security.keys.content.X509Data
 import org.apache.xml.security.signature.XMLSignature
 import org.apache.xml.security.transforms.Transforms
+import org.bouncycastle.asn1.x500.style.BCStyle
+import org.bouncycastle.cert.jcajce.JcaX509CertificateHolder
 import org.w3c.dom.Attr
 import org.w3c.dom.Document
 import org.w3c.dom.Element
@@ -13,17 +16,22 @@ import java.security.cert.X509Certificate
 import javax.xml.parsers.DocumentBuilderFactory
 
 /**
- * Firma XML (XMLDSig, enveloped) reutilizable para los 4 pasos del
- * protocolo del SAT (plan-integracion-sat.md, sección 3): tanto el
- * `Timestamp` de autenticación como el `<des:solicitud>`/`<des:peticion>`
- * de cada paso posterior se firman con el mismo esquema —
- * RSA-SHA256 + canonicalización C14N exclusiva + certificado embebido en
- * `KeyInfo` (el SAT valida contra ese certificado, no contra uno propio).
+ * Firma XML (XMLDSig) para los 3 pasos del protocolo del SAT posteriores a
+ * la Autenticación (plan-integracion-sat.md, sección 3):
+ * `SolicitaDescarga*`/`VerificaSolicitudDescarga`/
+ * `PeticionDescargaMasivaTercerosEntrada` — todos firman su `<des:solicitud>`/
+ * `<des:peticionDescarga>` de forma "enveloped" ([signEnveloped]). El paso
+ * de Autenticación en sí usa un esquema WS-Security distinto
+ * ([signWsSecurityHeader]) — ver [SatWsDescargaMasivaClient.autenticar],
+ * que además construye su XML a mano en vez de vía esta clase (los
+ * detalles finos de WS-Security no se prestan bien a una API genérica).
  *
  * Se apoya en Apache Santuario (`org.apache.santuario:xmlsec`), la
  * implementación de referencia de XML Security for Java — no reinventa la
  * canonicalización ni el cálculo del digest, ambos notoriamente fáciles de
- * hacer mal a mano.
+ * hacer mal a mano. Toda la forma exacta (algoritmos, transforms, KeyInfo)
+ * se verificó contra la documentación oficial del SAT y contra el SAT real
+ * con una e.firma real (2026-09-04).
  */
 class SatXmlSignatureService {
 
@@ -41,23 +49,59 @@ class SatXmlSignatureService {
 
     /**
      * Firma [elementToSign] (que debe tener un atributo de nombre local
-     * `Id` con valor [elementId] — con o sin prefijo de namespace, p.ej.
-     * tanto `Id="..."` como `wsu:Id="..."` del Timestamp de autenticación)
-     * y anexa el nodo `<Signature>` resultante como hijo de ese mismo
-     * elemento (enveloped signature — el patrón que usa el SAT en los 4
-     * pasos, a diferencia de una signature separada apuntando por URI
-     * externa).
-     *
-     * Se busca el atributo por nombre local y se marca con
-     * `setIdAttributeNode` (no `setIdAttribute("Id", ...)`): este último
-     * busca por nombre completo exacto y falla con `DOMException
-     * NOT_FOUND_ERR` cuando el atributo real tiene prefijo (`wsu:Id` !=
-     * `Id`) — se descubrió probando contra el SAT real.
+     * `Id` con valor [elementId]) y anexa el `<Signature>` resultante como
+     * hijo de ese mismo elemento (enveloped) — el patrón que usan
+     * `SolicitaDescarga*`/`VerificaSolicitudDescarga`/
+     * `PeticionDescargaMasivaTercerosEntrada`, confirmado contra dos
+     * fuentes reales (documentación oficial del SAT y
+     * `phpcfdi/sat-ws-descarga-masiva`, verificado con una e.firma real
+     * 2026-09-04): RSA-SHA1, canonicalización **estándar** (no exclusiva —
+     * distinta de [signWsSecurityHeader], que sí usa exclusiva para el
+     * paso de Autenticación), un solo transform (`enveloped-signature`,
+     * sin transform de canonicalización aparte), y `KeyInfo` con
+     * `X509Data/X509IssuerSerial` (no `SecurityTokenReference`, eso es
+     * solo para Autenticación).
      */
     fun signEnveloped(document: Document, elementToSign: Element, elementId: String, certificate: X509Certificate, privateKey: PrivateKey) {
-        val signature = buildSignature(document, elementToSign, elementId)
-        signature.addKeyInfo(certificate)
+        markIdAttribute(elementToSign)
+
+        val signature = XMLSignature(
+            document,
+            "",
+            XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA1,
+            Canonicalizer.ALGO_ID_C14N_OMIT_COMMENTS,
+        )
+        elementToSign.appendChild(signature.element)
+
+        val transforms = Transforms(document)
+        transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE)
+        signature.addDocument("#$elementId", transforms, MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA1)
+
+        val x509Data = X509Data(document)
+        x509Data.addIssuerSerial(issuerRfc4514(certificate), certificate.serialNumber)
+        x509Data.addCertificate(certificate)
+        signature.keyInfo.add(x509Data)
+
         signature.sign(privateKey)
+    }
+
+    /**
+     * Nombre del emisor del certificado en formato RFC4514 — el mismo que
+     * usa OpenSSL (y por ende `phpcfdi/credentials`). BouncyCastle's
+     * `BCStyle` produce algo muy cercano pero con nombres cortos distintos
+     * (`E=`, `STREET=`, `PostalCode=`, `UniqueIdentifier=` en vez de
+     * `emailAddress=`, `street=`, `postalCode=`, `x500UniqueIdentifier=`) y
+     * escapa comas como `\, ` en vez de `\2c` — normalizado a mano tras
+     * comparar byte a byte contra la salida real de PHP con una e.firma real.
+     */
+    private fun issuerRfc4514(certificate: X509Certificate): String {
+        val issuer = JcaX509CertificateHolder(certificate).issuer
+        var result = BCStyle.INSTANCE.toString(issuer)
+        result = Regex("(?<=^|,)E=").replace(result, "emailAddress=")
+        result = Regex("(?<=^|,)STREET=").replace(result, "street=")
+        result = Regex("(?<=^|,)PostalCode=").replace(result, "postalCode=")
+        result = Regex("(?<=^|,)UniqueIdentifier=").replace(result, "x500UniqueIdentifier=")
+        return result.replace("\\, ", "\\2c")
     }
 
     /**
@@ -119,26 +163,6 @@ class SatXmlSignatureService {
         signature.keyInfo.addUnknownElement(securityTokenReference)
 
         signature.sign(privateKey)
-    }
-
-    private fun buildSignature(document: Document, elementToSign: Element, elementId: String): XMLSignature {
-        markIdAttribute(elementToSign)
-
-        val signature = XMLSignature(
-            document,
-            "",
-            XMLSignature.ALGO_ID_SIGNATURE_RSA_SHA256,
-            Canonicalizer.ALGO_ID_C14N_EXCL_OMIT_COMMENTS,
-        )
-        elementToSign.appendChild(signature.element)
-
-        // Sin comentarios, misma razón que en signWsSecurityHeader: debe
-        // coincidir con el CanonicalizationMethod (ALGO_ID_C14N_EXCL_OMIT_COMMENTS).
-        val transforms = Transforms(document)
-        transforms.addTransform(Transforms.TRANSFORM_ENVELOPED_SIGNATURE)
-        transforms.addTransform(Transforms.TRANSFORM_C14N_EXCL_OMIT_COMMENTS)
-        signature.addDocument("#$elementId", transforms, MessageDigestAlgorithm.ALGO_ID_DIGEST_SHA256)
-        return signature
     }
 
     private fun markIdAttribute(elementToSign: Element) {
