@@ -1,0 +1,33 @@
+name: Deploy a VPS
+
+# Se dispara cuando el workflow "CI" (ci.yml) termina en main — no directo en
+# cada push, para nunca desplegar código que no compiló o no pasó los tests.
+# "workflow_dispatch" agrega además un botón "Run workflow" manual en GitHub,
+# útil para volver a desplegar sin necesidad de un commit nuevo.
+on:
+  workflow_run:
+    workflows: ['CI']
+    branches: [main]
+    types:
+      - completed
+  workflow_dispatch: {}
+
+jobs:
+  deploy:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desplegar por SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ubuntu
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          script: |
+            sudo -u francisco -i bash -c '
+              set -e
+              cd /home/francisco/docker/nexora/nexora-api
+              git pull origin main
+              docker compose up --build -d
+              docker image prune -f
+            '
