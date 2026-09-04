@@ -115,6 +115,14 @@ class SatSyncService(
             throw e
         }
 
+        // rfcContraparte no se pasa aquí: la sync automática/incremental no
+        // tiene forma de saber qué RFC de contraparte consultar para
+        // RECIBIDAS (el SAT exige uno específico, no "todos mis recibidos"
+        // — ver SatSoapClient.solicitarDescarga). Hoy esto hace que la sync
+        // automática de RECIBIDAS falle con SatProtocolException; queda
+        // pendiente para cuando se implemente ese caso de uso completo
+        // (probablemente una lista de RFCs de contraparte a monitorear,
+        // configurada por el usuario).
         val solicitud = soapClient.solicitarDescarga(token, certificate.rfc, tipo, desde, hasta, x509, privateKey)
         if (!solicitud.exitosa || solicitud.idSolicitud == null) {
             fail(downloadRequest, solicitud.mensaje)

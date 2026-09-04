@@ -54,15 +54,37 @@ private val SOLICITUD_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH
  * de ahí que este método construya el XML a mano en vez de usar
  * [SatXmlSignatureService].
  *
- * Los pasos 2-4 (`solicitarDescarga`/`verificarSolicitud`/`descargarPaquete`)
- * usan un esquema de firma distinto (confirmado contra la documentación
- * oficial del SAT y contra un ejemplo real v1.5 de developers.sw.com.mx):
- * canonicalización **estándar** (no exclusiva), un solo transform
- * (`enveloped-signature`), y `KeyInfo` con `X509Data/X509IssuerSerial` (no
- * `SecurityTokenReference`) — implementado en [SatXmlSignatureService.signEnveloped].
- * `solicitarDescarga` llegó a devolver un `IdSolicitud` real del SAT
- * (2026-09-04), pero con `CodEstatus="404" Mensaje="Error no controlado"` —
- * ver el propio método para el estado exacto de esta parte.
+ * ✅ **[solicitarDescarga]/[verificarSolicitud] confirmados funcionando
+ * contra el SAT real (2026-09-04)**, para EMITIDAS y RECIBIDAS. Usan un
+ * esquema de firma distinto al de Autenticación (confirmado contra la
+ * documentación oficial del SAT — un PDF completo, leído con `pdftotext`
+ * — y contra un ejemplo real v1.5 de developers.sw.com.mx): canonicalización
+ * **estándar** (no exclusiva), un solo transform `enveloped-signature`, y
+ * `KeyInfo` con `X509Data/X509IssuerSerial` (no `SecurityTokenReference`) —
+ * implementado en [SatXmlSignatureService.signEnveloped]. Dos detalles no
+ * documentados que solo aparecieron probando contra el SAT real:
+ * - `EstadoComprobante="Todos"` es inválido cuando `TipoSolicitud="CFDI"`
+ *   (XML completo) — el SAT no permite descargar cancelados como XML, solo
+ *   como Metadata. Se usa `"Vigente"`.
+ * - `<des:RfcReceptores>` va **solo** en `SolicitaDescargaEmitidos` (aunque
+ *   vacío); incluirlo en `SolicitaDescargaRecibidos` causa `302 Sello Mal
+ *   Formado` (un error de firma, no de negocio) — no se documenta esto en
+ *   ningún lado, se descubrió por ensayo y error.
+ *
+ * ⏳ **[descargarPaquete] sin confirmar con datos reales todavía.** Con
+ * EMITIDAS, la cuenta de prueba no tenía CFDI en el rango — el SAT
+ * respondió correctamente que no había información (no es un fallo). Con
+ * RECIBIDAS y una contraparte real que sí facturó a la cuenta de prueba, la
+ * solicitud fue aceptada (`5000`) y el SAT estuvo activamente `EN_PROCESO`
+ * varios minutos (dos corridas: 6 y 11 intentos de poll antes de fallar) —
+ * fuerte indicio de que sí había datos reales — pero terminó en
+ * `CodigoEstadoSolicitud` no confirmado / `CodEstatus="404" Mensaje="Error
+ * no controlado"` en ambas corridas. La documentación oficial describe 404
+ * como un error genérico e inespecífico del propio servicio del SAT
+ * ("reintentar; si persiste, reportar por RMA"), consistente con que la
+ * solicitud sí avanzó bastante antes de fallar. Pendiente: más reintentos
+ * en otro momento, o revisar si hay un límite de volumen/tiempo no
+ * documentado que el SAT esté aplicando en su propio backend.
  *
  * Con `NEXORA_SAT_DEBUG_XML=1` se imprime el XML de cada request completo
  * (sin datos sensibles: el certificado ya es público y la firma no es
@@ -145,18 +167,7 @@ class SatWsDescargaMasivaClient(
      *
      * ⚠️ Para `RECIBIDAS` el protocolo del SAT exige el RFC del emisor
      * específico a consultar — no existe forma de pedir "todos mis
-     * recibidos" en una sola solicitud. [rfc] aquí es el RFC del usuario
-     * (RfcSolicitante/RfcReceptor); falta un parámetro para el RFC de la
-     * contraparte cuando `tipo == RECIBIDAS` — pendiente de ajustar el
-     * contrato de [SatSoapClient] cuando se implemente ese caso de uso.
-     */
-    /**
-     * ⚠️ Para `RECIBIDAS` el protocolo del SAT exige el RFC del emisor
-     * específico a consultar — no existe forma de pedir "todos mis
-     * recibidos" en una sola solicitud. [rfc] aquí es el RFC del usuario
-     * (RfcSolicitante/RfcReceptor); falta un parámetro para el RFC de la
-     * contraparte cuando `tipo == RECIBIDAS` — pendiente de ajustar el
-     * contrato de [SatSoapClient] cuando se implemente ese caso de uso.
+     * recibidos" en una sola solicitud — ver [rfcContraparte].
      */
     override fun solicitarDescarga(
         token: String,
@@ -166,7 +177,12 @@ class SatWsDescargaMasivaClient(
         hasta: Instant,
         certificate: X509Certificate,
         privateKey: PrivateKey,
+        rfcContraparte: String?,
     ): SatSolicitudResult {
+        if (tipo == CfdiTipo.RECIBIDAS && rfcContraparte.isNullOrBlank()) {
+            throw SatProtocolException("RECIBIDAS requiere el RFC del emisor específico a consultar — el SAT no permite \"todos mis recibidos\" en una sola solicitud.")
+        }
+
         val nodeName = if (tipo == CfdiTipo.EMITIDAS) "SolicitaDescargaEmitidos" else "SolicitaDescargaRecibidos"
         val cdmx = ZoneId.of("America/Mexico_City")
         val fechaInicial = SOLICITUD_DATE_FORMAT.format(desde.atZone(cdmx))
@@ -180,16 +196,34 @@ class SatWsDescargaMasivaClient(
         val solicitudId = "_${UUID.randomUUID()}"
         val solicitud = document.createElementNS(TYPES_NS, "des:solicitud").also {
             it.setAttribute("Id", solicitudId)
-            it.setAttribute("EstadoComprobante", "Todos")
+            // "Todos" (incluye cancelados) no es válido cuando TipoSolicitud="CFDI"
+            // (XML completo) — el SAT responde "No se permite la descarga
+            // de xml que se encuentren cancelados" (verificado contra el
+            // SAT real). Solo aplica a "Metadata"; para XML completo debe
+            // ser "Vigente" (o "Cancelado" en una solicitud aparte, si
+            // alguna vez hace falta traer específicamente cancelados).
+            it.setAttribute("EstadoComprobante", "Vigente")
             it.setAttribute("FechaInicial", fechaInicial)
             it.setAttribute("FechaFinal", fechaFinal)
             it.setAttribute("RfcSolicitante", rfc)
             it.setAttribute("TipoSolicitud", "CFDI")
-            if (tipo == CfdiTipo.EMITIDAS) it.setAttribute("RfcEmisor", rfc) else it.setAttribute("RfcReceptor", rfc)
+            // EMITIDAS: el usuario es el emisor. RECIBIDAS: el usuario es el
+            // receptor y RfcEmisor es obligatoriamente la contraparte
+            // específica (validado arriba) — confirmado contra el SAT real.
+            if (tipo == CfdiTipo.EMITIDAS) {
+                it.setAttribute("RfcEmisor", rfc)
+            } else {
+                it.setAttribute("RfcEmisor", rfcContraparte)
+                it.setAttribute("RfcReceptor", rfc)
+            }
             peticion.appendChild(it)
         }
-        // Presente incluso vacío — confirmado contra la documentación oficial del SAT y contra un ejemplo real v1.5.
-        document.createElementNS(TYPES_NS, "des:RfcReceptores").also(solicitud::appendChild)
+        // Solo para EMITIDAS — presente incluso vacío ahí. Para RECIBIDAS no
+        // debe aparecer en absoluto (confirmado contra el SAT real:
+        // incluirlo causaba "302 Sello Mal Formado").
+        if (tipo == CfdiTipo.EMITIDAS) {
+            document.createElementNS(TYPES_NS, "des:RfcReceptores").also(solicitud::appendChild)
+        }
 
         signer.signEnveloped(document, solicitud, solicitudId, certificate, privateKey)
 
