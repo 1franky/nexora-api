@@ -69,6 +69,7 @@ class FakeSatSoapClient : SatSoapClient {
         hasta: Instant,
         certificate: X509Certificate,
         privateKey: PrivateKey,
+        rfcContraparte: String?,
     ): SatSolicitudResult = SatSolicitudResult(idSolicitud = "fake-solicitud-$tipo", codigoEstatus = "5000", mensaje = "Solicitud aceptada", exitosa = true)
 
     override fun verificarSolicitud(

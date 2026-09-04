@@ -20,7 +20,16 @@ interface SatSoapClient {
     /** Paso 1: intercambia certificado+llave por un token de sesión de vida corta (~5 min). */
     fun autenticar(certificate: X509Certificate, privateKey: PrivateKey): String
 
-    /** Paso 2: pide la descarga por RFC y rango de fechas. Devuelve el `IdSolicitud` del SAT. */
+    /**
+     * Paso 2: pide la descarga por RFC y rango de fechas. Devuelve el
+     * `IdSolicitud` del SAT.
+     *
+     * [rfcContraparte]: para `tipo == RECIBIDAS`, el SAT exige el RFC del
+     * emisor específico a consultar — no existe forma de pedir "todos mis
+     * recibidos" en una sola solicitud (confirmado contra el SAT real,
+     * 2026-09-04). Obligatorio (no `null`) cuando `tipo == RECIBIDAS`; se
+     * ignora para `EMITIDAS`.
+     */
     fun solicitarDescarga(
         token: String,
         rfc: String,
@@ -29,6 +38,7 @@ interface SatSoapClient {
         hasta: Instant,
         certificate: X509Certificate,
         privateKey: PrivateKey,
+        rfcContraparte: String? = null,
     ): SatSolicitudResult
 
     /** Paso 3: consulta el estado de una solicitud ya hecha. */

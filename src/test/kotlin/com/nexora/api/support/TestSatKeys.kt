@@ -1,7 +1,11 @@
 package com.nexora.api.support
 
+import org.bouncycastle.asn1.x500.X500Name
+import org.bouncycastle.asn1.x500.X500NameBuilder
+import org.bouncycastle.asn1.x500.style.BCStyle
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
+import org.bouncycastle.cert.X509v3CertificateBuilder
 import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter
-import org.bouncycastle.cert.jcajce.JcaX509v3CertificateBuilder
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder
 import java.math.BigInteger
@@ -17,7 +21,6 @@ import javax.crypto.EncryptedPrivateKeyInfo
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.PBEParameterSpec
-import javax.security.auth.x500.X500Principal
 
 /**
  * Genera un certificado autofirmado + llave PKCS#8 cifrada, con la misma
@@ -41,14 +44,19 @@ object TestSatKeys {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
 
         val now = Instant.now()
-        val subject = X500Principal("CN=$rfc")
-        val certBuilder = JcaX509v3CertificateBuilder(
+        // Mismo campo que usa una e.firma real del SAT para el RFC — OID
+        // 2.5.4.45 (BCStyle.UNIQUE_IDENTIFIER), no el CN (ver SatKeyReader.extractRfc).
+        val subject: X500Name = X500NameBuilder(BCStyle.INSTANCE)
+            .addRDN(BCStyle.CN, "Test")
+            .addRDN(BCStyle.UNIQUE_IDENTIFIER, rfc)
+            .build()
+        val certBuilder = X509v3CertificateBuilder(
             subject,
             BigInteger.valueOf(now.toEpochMilli()),
             Date.from(now.minus(1, ChronoUnit.HOURS)),
             Date.from(now.plus(365, ChronoUnit.DAYS)),
             subject,
-            keyPair.public,
+            SubjectPublicKeyInfo.getInstance(keyPair.public.encoded),
         )
         val signer = JcaContentSignerBuilder("SHA256WithRSA").setProvider(BouncyCastleProvider.PROVIDER_NAME).build(keyPair.private)
         val certificate: X509Certificate = JcaX509CertificateConverter()
