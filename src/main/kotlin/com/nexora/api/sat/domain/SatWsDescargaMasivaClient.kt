@@ -29,14 +29,44 @@ private val TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:s
  * Implementación real de [SatSoapClient] contra el Web Service oficial de
  * Descarga Masiva de CFDI del SAT (plan-integracion-sat.md, sección 3).
  *
- * ⚠️ **Verificar antes de producción**: las URLs de los 3 endpoints y la
- * forma exacta de los envelopes SOAP (namespaces, WS-Security del paso de
- * autenticación) son las documentadas públicamente por implementaciones de
- * referencia del protocolo al momento de escribir este cliente — el SAT
- * ajusta detalles de este servicio de vez en cuando. Antes de usarlo con
- * datos reales: probar los 4 pasos contra el SAT con una e.firma de
- * prueba y ajustar aquí lo que no calce (especialmente [autenticar], la
- * parte más sensible a cambios de protocolo).
+ * ⚠️ **[autenticar] probado contra el SAT real, todavía no funciona
+ * (2026-09-04).** Con una e.firma real (RFC LOSF940729DX3) el SAT sigue
+ * respondiendo `a:InvalidSecurity: An error occurred when verifying
+ * security for the message` — un fallo genérico sin más detalle. En el
+ * camino se confirmaron y corrigieron varios bugs reales (quedan aplicados
+ * aquí y en [SatKeyReader]):
+ * - El RFC del certificado no se leía bien: `X509Certificate.subjectX500Principal.name`
+ *   no decodifica el OID 2.5.4.45 (queda como hex DER crudo) — corregido en
+ *   [SatKeyReader.extractRfc] con la API de BouncyCastle.
+ * - El `.key` real del SAT usa PBES2 con DES-EDE3-CBC, no el PBES1 que se
+ *   había asumido — corregido en [SatKeyReader.readPrivateKey].
+ * - El atributo `Id`/`wsu:Id` necesita namespace resuelto (`setAttributeNS`,
+ *   no `setAttribute` con un prefijo como texto) para poder firmarlo y
+ *   luego serializarlo — corregido en [SatXmlSignatureService].
+ * - La firma del Timestamp debe ir con `KeyInfo` → `SecurityTokenReference`
+ *   apuntando a un `BinarySecurityToken` (perfil WS-Security X.509 Token
+ *   Profile completo), no un certificado embebido directo.
+ *
+ * Se probaron además, sin éxito por ahora: firmar el Timestamp como
+ * hermano de la Signature (no enveloped) dentro de `wsse:Security`, firmar
+ * Timestamp+Body juntos (patrón típico de bindings WCF), y RSA-SHA1/SHA1 en
+ * vez de SHA256 (queda así, sin confirmar, por ser la hipótesis con más
+ * sustento: el protocolo es de ~2016). Con `NEXORA_SAT_DEBUG_XML=1` se
+ * imprime el XML de request completo (sin datos sensibles: el certificado
+ * ya es público y la firma no es reversible a la llave privada) — útil
+ * para retomar la depuración. Hipótesis que faltan probar: la cadena de
+ * certificación completa en el BinarySecurityToken (no solo el certificado
+ * del usuario), y comparar contra un request real conocido-funcional de
+ * otra herramienta (ej. capturar el tráfico de una biblioteca de
+ * referencia en otro lenguaje).
+ *
+ * Las URLs de los 3 endpoints y los namespaces de las operaciones
+ * (`AUTH_NS`/`TYPES_NS`) parecen correctos — el SAT sí reconoce la
+ * operación y el SOAPAction (si no, respondería un fallo de "acción no
+ * reconocida", no `InvalidSecurity`); solo la verificación de la firma
+ * falla. Los pasos 2-4 (`solicitarDescarga`/`verificarSolicitud`/
+ * `descargarPaquete`) no se han podido probar todavía porque dependen de
+ * pasar primero por [autenticar].
  */
 @Component
 class SatWsDescargaMasivaClient(
@@ -65,10 +95,31 @@ class SatWsDescargaMasivaClient(
             header.appendChild(it)
         }
 
+        // El SAT exige el perfil WS-Security X.509 Token Profile completo: un
+        // BinarySecurityToken con el certificado, referenciado desde el
+        // KeyInfo de la firma vía SecurityTokenReference — con el
+        // certificado embebido directo en KeyInfo (la forma "simple" de
+        // XMLDSig) el SAT responde `a:InvalidSecurity` aunque la firma en sí
+        // sea válida. Verificado contra el SAT real.
+        val bstId = "_bst-${UUID.randomUUID()}"
+        document.createElementNS(WSSE_NS, "o:BinarySecurityToken").also {
+            it.setAttributeNS(WSU_NS, "u:Id", bstId)
+            it.setAttribute("ValueType", SatXmlSignatureService.X509_V3_VALUE_TYPE)
+            it.setAttribute("EncodingType", "http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary")
+            it.textContent = Base64.getEncoder().encodeToString(certificate.encoded)
+            security.appendChild(it)
+        }
+
         val timestampId = "_ts-${UUID.randomUUID()}"
         val now = Instant.now()
         val timestamp = document.createElementNS(WSU_NS, "u:Timestamp").also {
-            it.setAttribute("u:Id", timestampId)
+            // setAttributeNS (no setAttribute): el atributo debe quedar
+            // realmente asociado al namespace WSU_NS, no solo tener un
+            // prefijo "u:" como texto — si no, el serializador XML falla al
+            // no poder resolver el prefijo del atributo al escribirlo
+            // (aunque el elemento Timestamp sí declare xmlns:u). Verificado
+            // contra el SAT real.
+            it.setAttributeNS(WSU_NS, "u:Id", timestampId)
             security.appendChild(it)
         }
         document.createElementNS(WSU_NS, "u:Created").also {
@@ -80,12 +131,21 @@ class SatWsDescargaMasivaClient(
             timestamp.appendChild(it)
         }
 
-        signer.signEnveloped(document, timestamp, timestampId, certificate, privateKey)
-
-        val body = document.createElementNS(SOAP_NS, "s:Body").also(envelope::appendChild)
+        // Se firma el Timestamp junto con el Body (no solo el Timestamp) —
+        // el patrón típico de los bindings de seguridad de mensaje de WCF,
+        // que es lo que expone el SAT en este servicio.
+        val bodyId = "_body-${UUID.randomUUID()}"
+        val body = document.createElementNS(SOAP_NS, "s:Body").also {
+            it.setAttributeNS(WSU_NS, "u:Id", bodyId)
+            envelope.appendChild(it)
+        }
         document.createElementNS(AUTH_NS, "Autentica").also(body::appendChild)
 
-        val responseXml = post(autenticacionUrl, toXmlString(document), soapAction = "$AUTH_NS/IAutenticacion/Autentica")
+        signer.signWsSecurityHeader(document, security, listOf(timestamp to timestampId, body to bodyId), bstId, privateKey)
+
+        val requestXml = toXmlString(document)
+        if (System.getenv("NEXORA_SAT_DEBUG_XML") == "1") println("REQUEST XML:\n$requestXml")
+        val responseXml = post(autenticacionUrl, requestXml, soapAction = "$AUTH_NS/IAutenticacion/Autentica")
         val token = xPath.evaluate("//*[local-name()='AutenticaResult']", parse(responseXml), XPathConstants.STRING) as String
         if (token.isBlank()) {
             throw SatProtocolException("El SAT no devolvió token de autenticación — revisar respuesta cruda en logs con nivel DEBUG.")
