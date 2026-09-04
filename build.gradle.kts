@@ -32,6 +32,14 @@ dependencies {
 	implementation("org.jetbrains.kotlin:kotlin-reflect")
 	implementation("tools.jackson.module:jackson-module-kotlin")
 	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.0")
+	// Integración SAT (B11, ver plan-integracion-sat.md): firma XML del token
+	// WS-Security del Web Service de Descarga Masiva (santuario) y lectura de
+	// certificado/llave privada de la e.firma en formato X.509/PKCS#8 DER
+	// (bouncycastle — el JCE por defecto no trae todos los proveedores que
+	// hacen falta para el formato exacto en que el SAT entrega la llave).
+	implementation("org.apache.santuario:xmlsec:4.0.4")
+	implementation("org.bouncycastle:bcprov-jdk18on:1.79")
+	implementation("org.bouncycastle:bcpkix-jdk18on:1.79")
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
@@ -63,6 +71,8 @@ tasks.withType<Test> {
 	// Igual que en producción, el secreto viene de una variable de entorno;
 	// este es un valor fijo solo para que los tests sean deterministas.
 	environment("JWT_SECRET", "test-only-secret-not-for-production-0123456789-0123456789")
+	// Igual que JWT_SECRET, pero para la integración SAT (B11) — ver SatCryptoService.
+	environment("NEXORA_SAT_ENCRYPTION_KEY", "test-only-sat-key-not-for-production-0123456789-0123456789")
 	// Spring cachea el ApplicationContext entre clases de test con la misma
 	// configuración: el RateLimitFilter es el mismo singleton para todo el
 	// suite, y decenas de tests registran usuarios repetidamente desde la

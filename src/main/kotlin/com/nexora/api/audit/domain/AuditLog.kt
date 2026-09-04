@@ -27,6 +27,12 @@ enum class AuditEventType {
     CREDIT_CARD_PURCHASE_CREATED,
     INSTALLMENT_PLAN_CREATED,
     PAYMENT_CREATED,
+
+    /** Alta/reemplazo de la e.firma conectada (B11) — el dato más sensible que maneja Nexora, se audita explícitamente. */
+    SAT_CERTIFICATE_CONNECTED,
+
+    /** El usuario desconectó su e.firma (o el SAT la rechazó y se marcó ERROR_AUTENTICACION). */
+    SAT_CERTIFICATE_REVOKED,
 }
 
 /**

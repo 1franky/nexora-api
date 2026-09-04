@@ -17,6 +17,12 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+  servlet:
+    multipart:
+      # .cer/.key reales pesan unos KB — este techo es solo para no aceptar
+      # archivos disparatadamente grandes en el alta de e.firma (B11).
+      max-file-size: 2MB
+      max-request-size: 4MB
 
 server:
   port: ${SERVER_PORT:3005}
@@ -56,3 +62,11 @@ nexora:
     resend-api-key: ${RESEND_API_KEY:}
     from-address: ${MAIL_FROM_ADDRESS:noreply@contacto.franciscolopez.uk}
     from-name: ${MAIL_FROM_NAME:Nexora}
+  sat:
+    # B11 (integración SAT, ver plan-integracion-sat.md): clave maestra de
+    # cifrado (envelope encryption) de la e.firma conectada por cada
+    # usuario — mínimo 32 caracteres, igual de crítica que JWT_SECRET.
+    # SIEMPRE un valor real y distinto en el VPS, nunca en el repo.
+    encryption-key: ${NEXORA_SAT_ENCRYPTION_KEY}
+    initial-sync-months: ${NEXORA_SAT_INITIAL_SYNC_MONTHS:3}
+    sync-cron: ${NEXORA_SAT_SYNC_CRON:0 0 3 * * *}

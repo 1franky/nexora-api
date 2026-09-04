@@ -23,6 +23,12 @@ import java.util.UUID
  *   explícitamente posterior al MVP, todavía no existe).
  * - UNUSUAL_EXPENSE necesita detección de anomalías/gastos recurrentes
  *   (sección 31, también posterior al MVP).
+ *
+ * SAT_SYNC_COMPLETED/SAT_SYNC_FAILED (B11) sí se generan, pero no desde
+ * [NotificationService.generateForUser] — [SatSyncService] las crea
+ * directamente al terminar una sincronización, porque son un evento
+ * puntual disparado por un job async, no una regla recurrente evaluada
+ * contra "hoy" como el resto de este enum.
  */
 enum class NotificationType {
     PAYMENT_DUE,
@@ -31,6 +37,8 @@ enum class NotificationType {
     INSTALLMENT_DUE,
     BUDGET_EXCEEDED,
     UNUSUAL_EXPENSE,
+    SAT_SYNC_COMPLETED,
+    SAT_SYNC_FAILED,
 }
 
 enum class NotificationStatus {
