@@ -86,8 +86,22 @@ class SatSyncService(
             .orElseThrow { NotFoundException("e.firma no encontrada.") }
         val (x509, privateKey) = certificateService.decryptCredentials(certificate)
 
+        // Por tipo, no en bloque: un SatProtocolException de RECIBIDAS (p. ej. la
+        // falta de rfcContraparte en la sync automática, ver downloadAndStore) no
+        // debe tirar también el resultado de EMITIDAS ni dejar lastSyncAt sin
+        // avanzar — antes (con CfdiTipo.entries.sumOf sin try/catch) cualquier
+        // fallo de RECIBIDAS abortaba la función entera antes de llegar a
+        // guardar lastSyncAt, así que cada sync repetía EMITIDAS desde cero cada
+        // vez y el usuario recibía "no se pudo sincronizar" aunque EMITIDAS sí
+        // hubiera encontrado facturas. Un error inesperado (no SatProtocolException)
+        // sigue propagándose y abortando todo, como antes.
         val nuevas = CfdiTipo.entries.sumOf { tipo ->
-            downloadAndStore(certificate, x509, privateKey, tipo, desde, hasta)
+            try {
+                downloadAndStore(certificate, x509, privateKey, tipo, desde, hasta)
+            } catch (e: SatProtocolException) {
+                log.warn("Sincronización SAT ({}) no se pudo completar para el certificado {}: {}", tipo, satCertificateId, e.message)
+                0
+            }
         }
 
         certificate.lastSyncAt = Instant.now()
@@ -122,10 +136,22 @@ class SatSyncService(
         // automática de RECIBIDAS falle con SatProtocolException; queda
         // pendiente para cuando se implemente ese caso de uso completo
         // (probablemente una lista de RFCs de contraparte a monitorear,
-        // configurada por el usuario).
-        val solicitud = soapClient.solicitarDescarga(token, certificate.rfc, tipo, desde, hasta, x509, privateKey)
+        // configurada por el usuario). Se marca la solicitud como ERROR antes
+        // de relanzar — si no, la fila se queda en PENDIENTE para siempre (el
+        // catch de este SatProtocolException vive en syncNow, ya fuera de esta
+        // función, donde no hay acceso a downloadRequest).
+        val solicitud = try {
+            soapClient.solicitarDescarga(token, certificate.rfc, tipo, desde, hasta, x509, privateKey)
+        } catch (e: SatProtocolException) {
+            fail(downloadRequest, e.message)
+            throw e
+        }
         if (!solicitud.exitosa || solicitud.idSolicitud == null) {
-            fail(downloadRequest, solicitud.mensaje)
+            // Incluye CodEstatus además del Mensaje: el SAT puede devolver un
+            // Mensaje de éxito genérico ("Solicitud Aceptada") en respuestas que
+            // en realidad no traen IdSolicitud — el código es la única forma de
+            // distinguir esos casos al leer el error guardado.
+            fail(downloadRequest, "CodEstatus=${solicitud.codigoEstatus}: ${solicitud.mensaje}")
             return 0
         }
         downloadRequest.idSolicitudSat = solicitud.idSolicitud
