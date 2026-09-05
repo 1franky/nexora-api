@@ -217,7 +217,7 @@ class B5DashboardTests {
         // sin necesidad del ajuste de fin de mes que hace BillingCycleCalculator internamente).
         val upcomingClosing = billingCycleCalculator.closingDateOnOrAfter(closingDay, today)
         val closingDate = YearMonth.from(upcomingClosing).minusMonths(1).atDay(closingDay)
-        val paymentDueDate = billingCycleCalculator.paymentDueDateFor(closingDate, paymentDueDay)
+        val paymentDueDate = billingCycleCalculator.paymentDueDateFor(closingDate, closingDay, paymentDueDay)
         val auth = registerAndAuth("periododegracia")
         val cardId = createCreditCard(auth, closingDay, paymentDueDay)
 

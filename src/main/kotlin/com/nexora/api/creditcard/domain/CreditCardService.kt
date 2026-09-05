@@ -117,7 +117,7 @@ class CreditCardService(
     private fun toView(creditCard: CreditCard, account: Account): CreditCardView {
         val today = LocalDate.now()
         val nextClosingDate = billingCycleCalculator.closingDateOnOrAfter(creditCard.closingDay, today)
-        val nextPaymentDueDate = billingCycleCalculator.paymentDueDateFor(nextClosingDate, creditCard.paymentDueDay)
+        val nextPaymentDueDate = billingCycleCalculator.paymentDueDateFor(nextClosingDate, creditCard.closingDay, creditCard.paymentDueDay)
         return CreditCardView(
             creditCard = creditCard,
             account = account,

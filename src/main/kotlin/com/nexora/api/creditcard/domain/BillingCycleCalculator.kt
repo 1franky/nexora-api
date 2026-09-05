@@ -31,9 +31,26 @@ class BillingCycleCalculator {
         }
     }
 
-    /** Fecha límite de pago correspondiente a un ciclo que cierra en [closingDate]. */
-    fun paymentDueDateFor(closingDate: LocalDate, paymentDueDay: Int): LocalDate =
-        dayInMonth(YearMonth.from(closingDate).plusMonths(1), paymentDueDay)
+    /**
+     * Fecha límite de pago correspondiente a un ciclo que cierra en
+     * [closingDate] (con día de corte nominal [closingDay] — el mismo que
+     * generó [closingDate], sin el ajuste de fin de mes de [dayInMonth]).
+     *
+     * Es la fecha más próxima, posterior a [closingDate], cuyo día del mes
+     * es [paymentDueDay]: si [paymentDueDay] es posterior a [closingDay]
+     * dentro del mismo mes (ej. corte 1, pago 11) esa fecha ya cae en ese
+     * mismo mes; si no (ej. corte 15, pago 5, o corte 27, pago 7) cae en el
+     * mes siguiente. Antes esta función asumía "siempre el mes siguiente",
+     * lo que adelantaba un mes entero el pago de tarjetas con día límite
+     * mayor al de corte (bug reportado: corte 1/2, límite 11 no aparecía
+     * como "próximo pago" hasta un mes después de lo debido).
+     */
+    fun paymentDueDateFor(closingDate: LocalDate, closingDay: Int, paymentDueDay: Int): LocalDate =
+        if (paymentDueDay > closingDay) {
+            dayInMonth(YearMonth.from(closingDate), paymentDueDay)
+        } else {
+            dayInMonth(YearMonth.from(closingDate).plusMonths(1), paymentDueDay)
+        }
 
     /**
      * El ciclo que de verdad corresponde pagar en [date] — a diferencia de
@@ -55,11 +72,11 @@ class BillingCycleCalculator {
     fun currentPaymentCycle(closingDay: Int, paymentDueDay: Int, date: LocalDate): RelevantCycle {
         val upcomingClosing = closingDateOnOrAfter(closingDay, date)
         val previousClosing = dayInMonth(YearMonth.from(upcomingClosing).minusMonths(1), closingDay)
-        val previousDueDate = paymentDueDateFor(previousClosing, paymentDueDay)
+        val previousDueDate = paymentDueDateFor(previousClosing, closingDay, paymentDueDay)
         return if (!date.isAfter(previousDueDate)) {
             RelevantCycle(previousClosing, previousDueDate, isGracePeriod = true)
         } else {
-            RelevantCycle(upcomingClosing, paymentDueDateFor(upcomingClosing, paymentDueDay), isGracePeriod = false)
+            RelevantCycle(upcomingClosing, paymentDueDateFor(upcomingClosing, closingDay, paymentDueDay), isGracePeriod = false)
         }
     }
 
