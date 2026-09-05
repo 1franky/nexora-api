@@ -165,9 +165,19 @@ class SatWsDescargaMasivaClient(
      * Igual que [autenticar]: construcción manual de string, no DOM +
      * Apache Santuario, replicando `phpcfdi/sat-ws-descarga-masiva`.
      *
-     * ⚠️ Para `RECIBIDAS` el protocolo del SAT exige el RFC del emisor
-     * específico a consultar — no existe forma de pedir "todos mis
-     * recibidos" en una sola solicitud — ver [rfcContraparte].
+     * [rfcContraparte] (RECIBIDAS): en `FielRequestBuilder::queryIssuedReceived`
+     * de esa librería (fuente real revisada 2026-09-05, no solo su doc), el
+     * `RfcEmisor` sale de `RfcMatches::getFirst()->getValue()` — que devuelve
+     * `''` si no se especificó ningún RFC (`RfcMatches::getFirst()` no revienta
+     * con la lista vacía), y `buildFinalXml` filtra del XML cualquier atributo
+     * en `''`. Es decir: la librería sí arma `SolicitaDescargaRecibidos` sin
+     * `RfcEmisor` en absoluto cuando no se filtra por un emisor específico —
+     * contradice una suposición anterior de este archivo ("el SAT exige un
+     * RfcEmisor específico para RECIBIDAS"), que quedaba de una prueba previa
+     * cuyo error real pudo deberse a otra causa (posiblemente el mismo bug de
+     * `RfcReceptores` en RECIBIDAS que sí está confirmado más abajo). Pendiente
+     * de una prueba real end-to-end para confirmar del todo — mientras tanto,
+     * ya no se rechaza de antemano: se omite el atributo si no hay contraparte.
      */
     override fun solicitarDescarga(
         token: String,
@@ -179,10 +189,6 @@ class SatWsDescargaMasivaClient(
         privateKey: PrivateKey,
         rfcContraparte: String?,
     ): SatSolicitudResult {
-        if (tipo == CfdiTipo.RECIBIDAS && rfcContraparte.isNullOrBlank()) {
-            throw SatProtocolException("RECIBIDAS requiere el RFC del emisor específico a consultar — el SAT no permite \"todos mis recibidos\" en una sola solicitud.")
-        }
-
         val nodeName = if (tipo == CfdiTipo.EMITIDAS) "SolicitaDescargaEmitidos" else "SolicitaDescargaRecibidos"
         val cdmx = ZoneId.of("America/Mexico_City")
         val fechaInicial = SOLICITUD_DATE_FORMAT.format(desde.atZone(cdmx))
@@ -207,13 +213,16 @@ class SatWsDescargaMasivaClient(
             it.setAttribute("FechaFinal", fechaFinal)
             it.setAttribute("RfcSolicitante", rfc)
             it.setAttribute("TipoSolicitud", "CFDI")
-            // EMITIDAS: el usuario es el emisor. RECIBIDAS: el usuario es el
-            // receptor y RfcEmisor es obligatoriamente la contraparte
-            // específica (validado arriba) — confirmado contra el SAT real.
+            // EMITIDAS: el usuario es el emisor (RfcEmisor = rfc, siempre presente).
+            // RECIBIDAS: el usuario es el receptor (RfcReceptor = rfc, siempre
+            // presente); RfcEmisor solo se agrega si se quiere acotar a una
+            // contraparte específica — se omite del todo si no (ver el
+            // docstring de solicitarDescarga sobre por qué esto debería ser
+            // válido para el SAT, replicando phpcfdi/sat-ws-descarga-masiva).
             if (tipo == CfdiTipo.EMITIDAS) {
                 it.setAttribute("RfcEmisor", rfc)
             } else {
-                it.setAttribute("RfcEmisor", rfcContraparte)
+                if (!rfcContraparte.isNullOrBlank()) it.setAttribute("RfcEmisor", rfcContraparte)
                 it.setAttribute("RfcReceptor", rfc)
             }
             peticion.appendChild(it)

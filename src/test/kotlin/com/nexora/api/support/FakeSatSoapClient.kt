@@ -70,18 +70,7 @@ class FakeSatSoapClient : SatSoapClient {
         certificate: X509Certificate,
         privateKey: PrivateKey,
         rfcContraparte: String?,
-    ): SatSolicitudResult {
-        // Mismo comportamiento que SatWsDescargaMasivaClient (confirmado contra
-        // el SAT real): RECIBIDAS exige un rfcContraparte — el fake lo replica
-        // para que los tests de SatSyncService prueben ese caso de verdad, en
-        // vez de asumir siempre éxito.
-        if (tipo == CfdiTipo.RECIBIDAS && rfcContraparte.isNullOrBlank()) {
-            throw com.nexora.api.sat.domain.SatProtocolException(
-                "RECIBIDAS requiere el RFC del emisor específico a consultar — el SAT no permite \"todos mis recibidos\" en una sola solicitud.",
-            )
-        }
-        return SatSolicitudResult(idSolicitud = "fake-solicitud-$tipo", codigoEstatus = "5000", mensaje = "Solicitud aceptada", exitosa = true)
-    }
+    ): SatSolicitudResult = SatSolicitudResult(idSolicitud = "fake-solicitud-$tipo", codigoEstatus = "5000", mensaje = "Solicitud aceptada", exitosa = true)
 
     override fun verificarSolicitud(
         token: String,

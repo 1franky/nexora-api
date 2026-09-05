@@ -101,20 +101,34 @@ class SatSyncService(
             0
         }
 
-        // RECIBIDAS: el SAT exige el RFC del emisor específico en cada solicitud
-        // (ver SatWsDescargaMasivaClient.solicitarDescarga) — se sincroniza una
-        // vez por cada contraparte que el propio usuario registró (B12). Sin
-        // ninguna registrada, simplemente no hay nada que pedir: no es un error.
+        // RECIBIDAS: sin ningún RFC de contraparte registrado (B12), se intenta
+        // traer todo sin filtrar por emisor — ver el docstring de
+        // SatWsDescargaMasivaClient.solicitarDescarga sobre por qué el SAT
+        // debería aceptar esto (pendiente de confirmar con esta misma sync
+        // real). Con contrapartes registradas, se acota a cada una por
+        // separado en vez de traer todo: además de que el usuario lo pidió
+        // explícitamente, es la única forma de no toparse con el tope máximo
+        // de CFDI por solicitud (código 5003) si el volumen sin filtrar es
+        // demasiado grande.
         val contrapartes = contraparteRepository.findAllByUserIdOrderByCreatedAtAsc(certificate.userId)
-        for (contraparte in contrapartes) {
+        if (contrapartes.isEmpty()) {
             nuevas += try {
-                downloadAndStore(certificate, x509, privateKey, CfdiTipo.RECIBIDAS, desde, hasta, rfcContraparte = contraparte.rfc)
+                downloadAndStore(certificate, x509, privateKey, CfdiTipo.RECIBIDAS, desde, hasta, rfcContraparte = null)
             } catch (e: SatProtocolException) {
-                log.warn(
-                    "Sincronización SAT (RECIBIDAS de {}) no se pudo completar para el certificado {}: {}",
-                    contraparte.rfc, satCertificateId, e.message,
-                )
+                log.warn("Sincronización SAT (RECIBIDAS sin filtro) no se pudo completar para el certificado {}: {}", satCertificateId, e.message)
                 0
+            }
+        } else {
+            for (contraparte in contrapartes) {
+                nuevas += try {
+                    downloadAndStore(certificate, x509, privateKey, CfdiTipo.RECIBIDAS, desde, hasta, rfcContraparte = contraparte.rfc)
+                } catch (e: SatProtocolException) {
+                    log.warn(
+                        "Sincronización SAT (RECIBIDAS de {}) no se pudo completar para el certificado {}: {}",
+                        contraparte.rfc, satCertificateId, e.message,
+                    )
+                    0
+                }
             }
         }
 

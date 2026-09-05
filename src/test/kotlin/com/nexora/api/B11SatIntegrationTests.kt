@@ -7,6 +7,7 @@ import com.nexora.api.sat.domain.SatCertificateRepository
 import com.nexora.api.sat.domain.SatCertificateStatus
 import com.nexora.api.sat.domain.SatContraparteRfcRepository
 import com.nexora.api.sat.domain.SatDownloadRequestRepository
+import com.nexora.api.sat.domain.SatDownloadRequestStatus
 import com.nexora.api.sat.domain.SatSyncService
 import com.nexora.api.support.FakeSatSoapClient
 import com.nexora.api.support.TestSatKeys
@@ -209,7 +210,7 @@ class B11SatIntegrationTests {
     }
 
     @Test
-    fun `sin RFC de contraparte registrado, la sync no intenta RECIBIDAS en absoluto`() {
+    fun `sin RFC de contraparte registrado, la sync intenta RECIBIDAS sin filtrar por emisor`() {
         val (auth, userId) = mockMvc.registerAuthenticateAndGetUserId("sat-recibidas-sin-contraparte")
         val keys = TestSatKeys.generate(rfc = "TEST080808HI8")
 
@@ -217,15 +218,19 @@ class B11SatIntegrationTests {
         val certificateId = requireNotNull(satCertificateRepository.findAll().first { it.rfc == keys.rfc }.id)
         waitForFirstAsyncSync(certificateId)
 
-        fakeSatSoapClient.nextPackageXmls = listOf(testCfdiXml(emisorRfc = keys.rfc, receptorRfc = "OTRO010101XX1"))
+        val invoiceUuid = UUID.randomUUID().toString()
+        fakeSatSoapClient.nextPackageXmls = listOf(testCfdiXml(emisorRfc = "CUAL010101XX1", receptorRfc = keys.rfc, uuid = invoiceUuid))
         val nuevas = syncService.syncNow(certificateId, Instant.now().minusSeconds(3600), Instant.now())
 
-        assertEquals(1, nuevas, "EMITIDAS sí debe sincronizar")
-        assertEquals(
-            0,
-            satDownloadRequestRepository.findAll().count { it.satCertificateId == certificateId && it.tipo == CfdiTipo.RECIBIDAS },
-            "sin contrapartes registradas no debe generarse ninguna SatDownloadRequest de RECIBIDAS",
-        )
+        assertEquals(1, nuevas)
+        val recibidaRequest = satDownloadRequestRepository.findAll()
+            .first { it.satCertificateId == certificateId && it.tipo == CfdiTipo.RECIBIDAS }
+        assertEquals(null, recibidaRequest.rfcContraparte, "sin contraparte registrada, la solicitud de RECIBIDAS no debe llevar filtro de emisor")
+        assertEquals(SatDownloadRequestStatus.TERMINADA, recibidaRequest.estado)
+
+        val invoice = cfdiInvoiceRepository.findAll().first { it.userId == userId }
+        assertEquals(invoiceUuid, invoice.uuidFiscal)
+        assertEquals(CfdiTipo.RECIBIDAS, invoice.tipo)
     }
 
     @Test

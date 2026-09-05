@@ -24,11 +24,11 @@ interface SatSoapClient {
      * Paso 2: pide la descarga por RFC y rango de fechas. Devuelve el
      * `IdSolicitud` del SAT.
      *
-     * [rfcContraparte]: para `tipo == RECIBIDAS`, el SAT exige el RFC del
-     * emisor específico a consultar — no existe forma de pedir "todos mis
-     * recibidos" en una sola solicitud (confirmado contra el SAT real,
-     * 2026-09-04). Obligatorio (no `null`) cuando `tipo == RECIBIDAS`; se
-     * ignora para `EMITIDAS`.
+     * [rfcContraparte]: solo aplica a `tipo == RECIBIDAS` (se ignora para
+     * `EMITIDAS`) — filtro opcional para acotar a un emisor específico. Sin
+     * él, se pide todo lo recibido sin filtrar por emisor (ver el docstring
+     * de [SatWsDescargaMasivaClient.solicitarDescarga] sobre la evidencia de
+     * que el SAT sí lo permite así, pendiente de una prueba real end-to-end).
      */
     fun solicitarDescarga(
         token: String,
