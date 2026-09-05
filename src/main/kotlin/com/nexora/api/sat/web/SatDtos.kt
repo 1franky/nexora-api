@@ -5,7 +5,9 @@ import com.nexora.api.sat.domain.CfdiInvoice
 import com.nexora.api.sat.domain.CfdiTipo
 import com.nexora.api.sat.domain.SatCertificate
 import com.nexora.api.sat.domain.SatCertificateStatus
+import com.nexora.api.sat.domain.SatContraparteRfc
 import io.swagger.v3.oas.annotations.media.Schema
+import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import java.math.BigDecimal
 import java.time.Instant
@@ -69,6 +71,27 @@ data class CfdiInvoiceResponse(
             metodoPago = entity.metodoPago,
             usoCfdi = entity.usoCfdi,
             estadoSat = entity.estadoSat,
+        )
+    }
+}
+
+@Schema(description = "RFC de una contraparte (empleador, proveedor de servicios, etc.) a registrar para poder sincronizar tus CFDI RECIBIDAS de ese RFC — el SAT exige el RFC del emisor específico en cada solicitud de recibidas.")
+data class CreateSatContraparteRequest(
+    @field:NotBlank(message = "El RFC es obligatorio.")
+    val rfc: String,
+    val alias: String? = null,
+)
+
+data class SatContraparteResponse(
+    val id: UUID,
+    val rfc: String,
+    val alias: String?,
+) {
+    companion object {
+        fun from(entity: SatContraparteRfc) = SatContraparteResponse(
+            id = requireNotNull(entity.id),
+            rfc = entity.rfc,
+            alias = entity.alias,
         )
     }
 }

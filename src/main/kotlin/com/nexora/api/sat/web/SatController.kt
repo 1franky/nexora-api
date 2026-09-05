@@ -5,11 +5,13 @@ import com.nexora.api.sat.domain.CfdiInvoiceRepository
 import com.nexora.api.sat.domain.CfdiInvoiceSpecifications
 import com.nexora.api.sat.domain.CfdiTipo
 import com.nexora.api.sat.domain.SatCertificateService
+import com.nexora.api.sat.domain.SatContraparteService
 import com.nexora.api.sat.domain.SatSyncService
 import com.nexora.api.user.security.NexoraUserDetails
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.Parameter
 import io.swagger.v3.oas.annotations.tags.Tag
+import jakarta.validation.Valid
 import jakarta.validation.constraints.NotBlank
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
@@ -39,6 +41,7 @@ class SatController(
     private val certificateService: SatCertificateService,
     private val syncService: SatSyncService,
     private val cfdiInvoiceRepository: CfdiInvoiceRepository,
+    private val contraparteService: SatContraparteService,
 ) {
 
     @Operation(
@@ -118,5 +121,33 @@ class SatController(
             .contentType(MediaType.APPLICATION_XML)
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${invoice.uuidFiscal}.xml\"")
             .body(invoice.xmlContent)
+    }
+
+    @Operation(
+        summary = "Listar los RFC de contraparte registrados",
+        description = "El SAT exige el RFC del emisor específico para descargar RECIBIDAS (B12) — cada sync trae recibidas de cada uno de estos RFC.",
+    )
+    @GetMapping("/contrapartes")
+    fun listContrapartes(@AuthenticationPrincipal principal: NexoraUserDetails): List<SatContraparteResponse> =
+        contraparteService.listForUser(principal.userId).map(SatContraparteResponse::from)
+
+    @Operation(summary = "Registrar un RFC de contraparte")
+    @PostMapping("/contrapartes")
+    fun createContraparte(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @Valid @RequestBody request: CreateSatContraparteRequest,
+    ): ResponseEntity<SatContraparteResponse> {
+        val contraparte = contraparteService.create(principal.userId, request.rfc, request.alias)
+        return ResponseEntity.status(HttpStatus.CREATED).body(SatContraparteResponse.from(contraparte))
+    }
+
+    @Operation(summary = "Eliminar un RFC de contraparte", description = "No borra las facturas ya descargadas de ese RFC, solo deja de sincronizarlo.")
+    @DeleteMapping("/contrapartes/{id}")
+    fun deleteContraparte(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @Parameter(description = "Id del RFC de contraparte.") @PathVariable id: UUID,
+    ): ResponseEntity<Void> {
+        contraparteService.delete(principal.userId, id)
+        return ResponseEntity.noContent().build()
     }
 }

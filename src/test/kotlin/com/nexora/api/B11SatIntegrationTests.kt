@@ -5,6 +5,9 @@ import com.nexora.api.sat.domain.CfdiInvoiceRepository
 import com.nexora.api.sat.domain.CfdiTipo
 import com.nexora.api.sat.domain.SatCertificateRepository
 import com.nexora.api.sat.domain.SatCertificateStatus
+import com.nexora.api.sat.domain.SatContraparteRfcRepository
+import com.nexora.api.sat.domain.SatDownloadRequestRepository
+import com.nexora.api.sat.domain.SatDownloadRequestStatus
 import com.nexora.api.sat.domain.SatSyncService
 import com.nexora.api.support.FakeSatSoapClient
 import com.nexora.api.support.TestSatKeys
@@ -21,9 +24,11 @@ import org.springframework.context.annotation.Import
 import org.springframework.mock.web.MockMultipartFile
 import org.springframework.test.context.TestPropertySource
 import org.springframework.test.web.servlet.MockMvc
+import org.springframework.http.MediaType
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart
+import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.Instant
@@ -64,6 +69,12 @@ class B11SatIntegrationTests {
 
     @Autowired
     lateinit var syncService: SatSyncService
+
+    @Autowired
+    lateinit var satContraparteRfcRepository: SatContraparteRfcRepository
+
+    @Autowired
+    lateinit var satDownloadRequestRepository: SatDownloadRequestRepository
 
     /**
      * [fakeSatSoapClient] es un bean singleton compartido por todos los
@@ -196,6 +207,127 @@ class B11SatIntegrationTests {
 
         mockMvc.perform(get("/api/v1/sat/invoices/$invoiceId/xml").with(auth))
             .andExpect(status().isOk)
+    }
+
+    @Test
+    fun `sin RFC de contraparte registrado, la sync intenta RECIBIDAS sin filtrar por emisor`() {
+        val (auth, userId) = mockMvc.registerAuthenticateAndGetUserId("sat-recibidas-sin-contraparte")
+        val keys = TestSatKeys.generate(rfc = "TEST080808HI8")
+
+        connect(auth, keys).andExpect(status().isCreated)
+        val certificateId = requireNotNull(satCertificateRepository.findAll().first { it.rfc == keys.rfc }.id)
+        waitForFirstAsyncSync(certificateId)
+
+        val invoiceUuid = UUID.randomUUID().toString()
+        fakeSatSoapClient.nextPackageXmls = listOf(testCfdiXml(emisorRfc = "CUAL010101XX1", receptorRfc = keys.rfc, uuid = invoiceUuid))
+        val nuevas = syncService.syncNow(certificateId, Instant.now().minusSeconds(3600), Instant.now())
+
+        assertEquals(1, nuevas)
+        val recibidaRequest = satDownloadRequestRepository.findAll()
+            .first { it.satCertificateId == certificateId && it.tipo == CfdiTipo.RECIBIDAS }
+        assertEquals(null, recibidaRequest.rfcContraparte, "sin contraparte registrada, la solicitud de RECIBIDAS no debe llevar filtro de emisor")
+        assertEquals(SatDownloadRequestStatus.TERMINADA, recibidaRequest.estado)
+
+        val invoice = cfdiInvoiceRepository.findAll().first { it.userId == userId }
+        assertEquals(invoiceUuid, invoice.uuidFiscal)
+        assertEquals(CfdiTipo.RECIBIDAS, invoice.tipo)
+    }
+
+    @Test
+    fun `con un RFC de contraparte registrado, la sync trae RECIBIDAS de ese RFC`() {
+        val (auth, userId) = mockMvc.registerAuthenticateAndGetUserId("sat-recibidas-con-contraparte")
+        val keys = TestSatKeys.generate(rfc = "TEST090909IJ9")
+        val contraparteRfc = "KDS170207LP1"
+
+        mockMvc.perform(
+            post("/api/v1/sat/contrapartes").with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rfc":"$contraparteRfc","alias":"Mi trabajo"}"""),
+        ).andExpect(status().isCreated)
+
+        connect(auth, keys).andExpect(status().isCreated)
+        val certificateId = requireNotNull(satCertificateRepository.findAll().first { it.rfc == keys.rfc }.id)
+        waitForFirstAsyncSync(certificateId)
+
+        val invoiceUuid = UUID.randomUUID().toString()
+        fakeSatSoapClient.nextPackageXmls = listOf(testCfdiXml(emisorRfc = contraparteRfc, receptorRfc = keys.rfc, uuid = invoiceUuid))
+        val nuevas = syncService.syncNow(certificateId, Instant.now().minusSeconds(3600), Instant.now())
+
+        assertEquals(1, nuevas)
+        val recibidaRequest = satDownloadRequestRepository.findAll()
+            .first { it.satCertificateId == certificateId && it.tipo == CfdiTipo.RECIBIDAS }
+        assertEquals(contraparteRfc, recibidaRequest.rfcContraparte)
+
+        val invoice = cfdiInvoiceRepository.findAll().first { it.userId == userId }
+        assertEquals(invoiceUuid, invoice.uuidFiscal)
+        assertEquals(CfdiTipo.RECIBIDAS, invoice.tipo)
+    }
+
+    @Test
+    fun `CRUD de RFC de contraparte via HTTP, con validaciones`() {
+        val auth = mockMvc.registerAndAuthenticate("sat-contrapartes-crud")
+
+        val created = mockMvc.perform(
+            post("/api/v1/sat/contrapartes").with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rfc":" kds170207lp1 ","alias":"Mi trabajo"}"""),
+        ).andExpect(status().isCreated)
+            .andExpect(jsonPath("$.rfc").value("KDS170207LP1"))
+            .andExpect(jsonPath("$.alias").value("Mi trabajo"))
+            .andReturn().response.contentAsString
+        val id = JsonPath.read<String>(created, "$.id")
+
+        mockMvc.perform(get("/api/v1/sat/contrapartes").with(auth))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].rfc").value("KDS170207LP1"))
+
+        // Formato inválido.
+        mockMvc.perform(
+            post("/api/v1/sat/contrapartes").with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rfc":"no-es-un-rfc"}"""),
+        ).andExpect(status().isBadRequest)
+
+        // Duplicado (mismo RFC, ya normalizado a mayúsculas).
+        mockMvc.perform(
+            post("/api/v1/sat/contrapartes").with(auth)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""{"rfc":"KDS170207LP1"}"""),
+        ).andExpect(status().isBadRequest)
+
+        mockMvc.perform(delete("/api/v1/sat/contrapartes/$id").with(auth))
+            .andExpect(status().isNoContent)
+
+        mockMvc.perform(get("/api/v1/sat/contrapartes").with(auth))
+            .andExpect(status().isOk)
+            .andExpect(jsonPath("$.length()").value(0))
+    }
+
+    @Test
+    fun `listar filtrando por texto (RFC) y por rango de fechas del mismo anio de la factura`() {
+        // Reportado por el usuario: con bastantes facturas del 2026 ya sincronizadas, filtrar
+        // por su RFC + un rango de fechas de ese mismo año no traía ninguna.
+        val (auth, userId) = mockMvc.registerAuthenticateAndGetUserId("sat-filtros")
+        val keys = TestSatKeys.generate(rfc = "TEST070707GH7")
+
+        connect(auth, keys).andExpect(status().isCreated)
+        val certificateId = requireNotNull(satCertificateRepository.findAll().first { it.rfc == keys.rfc }.id)
+        waitForFirstAsyncSync(certificateId)
+
+        // testCfdiXml fija Fecha="2026-01-15T12:30:00" (hora local CDMX, sin offset en el XML).
+        fakeSatSoapClient.nextPackageXmls = listOf(testCfdiXml(emisorRfc = keys.rfc, receptorRfc = "OTRO010101XX1"))
+        syncService.syncNow(certificateId, Instant.now().minusSeconds(3600), Instant.now())
+        assertEquals(1, cfdiInvoiceRepository.findAll().count { it.userId == userId })
+
+        val filtered = mockMvc.perform(
+            get("/api/v1/sat/invoices").with(auth)
+                .param("texto", keys.rfc)
+                .param("desde", "2026-01-01T06:00:00Z") // 2026-01-01T00:00:00-06:00
+                .param("hasta", "2027-01-01T05:59:59Z"), // 2026-12-31T23:59:59-06:00
+        ).andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertEquals(1, JsonPath.read<Int>(filtered, "$.totalElements"), "el filtro combinado texto+rango debería seguir encontrando la factura")
     }
 
     @Test

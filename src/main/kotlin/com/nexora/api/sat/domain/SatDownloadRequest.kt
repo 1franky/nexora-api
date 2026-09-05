@@ -60,4 +60,8 @@ class SatDownloadRequest(
     @Column(name = "error_message", columnDefinition = "TEXT")
     var errorMessage: String? = null,
 
+    /** Solo en RECIBIDAS (B12): el RFC emisor específico consultado — el SAT no permite pedir "todos mis recibidos" en una sola solicitud. Null en EMITIDAS. */
+    @Column(name = "rfc_contraparte", length = 13)
+    var rfcContraparte: String? = null,
+
 ) : BaseEntity()
