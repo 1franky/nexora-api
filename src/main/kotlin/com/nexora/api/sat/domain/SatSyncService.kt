@@ -34,6 +34,7 @@ class SatSyncService(
     private val cfdiParser: CfdiParser,
     private val notificationRepository: NotificationRepository,
     private val properties: SatProperties,
+    private val contraparteRepository: SatContraparteRfcRepository,
 ) {
 
     private val log = LoggerFactory.getLogger(SatSyncService::class.java)
@@ -86,20 +87,33 @@ class SatSyncService(
             .orElseThrow { NotFoundException("e.firma no encontrada.") }
         val (x509, privateKey) = certificateService.decryptCredentials(certificate)
 
-        // Por tipo, no en bloque: un SatProtocolException de RECIBIDAS (p. ej. la
-        // falta de rfcContraparte en la sync automática, ver downloadAndStore) no
-        // debe tirar también el resultado de EMITIDAS ni dejar lastSyncAt sin
-        // avanzar — antes (con CfdiTipo.entries.sumOf sin try/catch) cualquier
-        // fallo de RECIBIDAS abortaba la función entera antes de llegar a
-        // guardar lastSyncAt, así que cada sync repetía EMITIDAS desde cero cada
-        // vez y el usuario recibía "no se pudo sincronizar" aunque EMITIDAS sí
-        // hubiera encontrado facturas. Un error inesperado (no SatProtocolException)
-        // sigue propagándose y abortando todo, como antes.
-        val nuevas = CfdiTipo.entries.sumOf { tipo ->
-            try {
-                downloadAndStore(certificate, x509, privateKey, tipo, desde, hasta)
+        // Aislado por sub-tarea (EMITIDAS, y una por cada RFC de contraparte para
+        // RECIBIDAS) para que un SatProtocolException de una no tire el resultado
+        // de las demás ni deje lastSyncAt sin avanzar — antes (con
+        // CfdiTipo.entries.sumOf sin try/catch) cualquier fallo abortaba la
+        // función entera antes de llegar a guardar lastSyncAt, así que cada sync
+        // repetía EMITIDAS desde cero cada vez. Un error inesperado (no
+        // SatProtocolException) sigue propagándose y abortando todo, como antes.
+        var nuevas = try {
+            downloadAndStore(certificate, x509, privateKey, CfdiTipo.EMITIDAS, desde, hasta)
+        } catch (e: SatProtocolException) {
+            log.warn("Sincronización SAT (EMITIDAS) no se pudo completar para el certificado {}: {}", satCertificateId, e.message)
+            0
+        }
+
+        // RECIBIDAS: el SAT exige el RFC del emisor específico en cada solicitud
+        // (ver SatWsDescargaMasivaClient.solicitarDescarga) — se sincroniza una
+        // vez por cada contraparte que el propio usuario registró (B12). Sin
+        // ninguna registrada, simplemente no hay nada que pedir: no es un error.
+        val contrapartes = contraparteRepository.findAllByUserIdOrderByCreatedAtAsc(certificate.userId)
+        for (contraparte in contrapartes) {
+            nuevas += try {
+                downloadAndStore(certificate, x509, privateKey, CfdiTipo.RECIBIDAS, desde, hasta, rfcContraparte = contraparte.rfc)
             } catch (e: SatProtocolException) {
-                log.warn("Sincronización SAT ({}) no se pudo completar para el certificado {}: {}", tipo, satCertificateId, e.message)
+                log.warn(
+                    "Sincronización SAT (RECIBIDAS de {}) no se pudo completar para el certificado {}: {}",
+                    contraparte.rfc, satCertificateId, e.message,
+                )
                 0
             }
         }
@@ -116,9 +130,16 @@ class SatSyncService(
         tipo: CfdiTipo,
         desde: Instant,
         hasta: Instant,
+        rfcContraparte: String? = null,
     ): Int {
         val downloadRequest = downloadRequestRepository.save(
-            SatDownloadRequest(satCertificateId = requireNotNull(certificate.id), tipo = tipo, fechaInicio = desde, fechaFin = hasta),
+            SatDownloadRequest(
+                satCertificateId = requireNotNull(certificate.id),
+                tipo = tipo,
+                fechaInicio = desde,
+                fechaFin = hasta,
+                rfcContraparte = rfcContraparte,
+            ),
         )
 
         val token = try {
@@ -129,19 +150,15 @@ class SatSyncService(
             throw e
         }
 
-        // rfcContraparte no se pasa aquí: la sync automática/incremental no
-        // tiene forma de saber qué RFC de contraparte consultar para
-        // RECIBIDAS (el SAT exige uno específico, no "todos mis recibidos"
-        // — ver SatSoapClient.solicitarDescarga). Hoy esto hace que la sync
-        // automática de RECIBIDAS falle con SatProtocolException; queda
-        // pendiente para cuando se implemente ese caso de uso completo
-        // (probablemente una lista de RFCs de contraparte a monitorear,
-        // configurada por el usuario). Se marca la solicitud como ERROR antes
-        // de relanzar — si no, la fila se queda en PENDIENTE para siempre (el
-        // catch de este SatProtocolException vive en syncNow, ya fuera de esta
-        // función, donde no hay acceso a downloadRequest).
+        // Se marca la solicitud como ERROR antes de relanzar — si no, la fila se
+        // queda en PENDIENTE para siempre (el catch de este SatProtocolException
+        // vive en syncNow, ya fuera de esta función, donde no hay acceso a
+        // downloadRequest). Para RECIBIDAS sin rfcContraparte (no debería pasar:
+        // syncNow ya solo llama una vez por cada contraparte registrada), el SAT
+        // sigue rechazando la solicitud igual que siempre — ver
+        // SatWsDescargaMasivaClient.solicitarDescarga.
         val solicitud = try {
-            soapClient.solicitarDescarga(token, certificate.rfc, tipo, desde, hasta, x509, privateKey)
+            soapClient.solicitarDescarga(token, certificate.rfc, tipo, desde, hasta, x509, privateKey, rfcContraparte)
         } catch (e: SatProtocolException) {
             fail(downloadRequest, e.message)
             throw e

@@ -1,6 +1,7 @@
 {
   "endpoints": [
     "DELETE /api/v1/sat/certificate",
+    "DELETE /api/v1/sat/contrapartes/{id}",
     "DELETE /api/v1/transactions/{id}",
     "GET /api/v1/accounts",
     "GET /api/v1/accounts/summary",
@@ -15,6 +16,7 @@
     "GET /api/v1/notifications",
     "GET /api/v1/reports",
     "GET /api/v1/sat/certificate",
+    "GET /api/v1/sat/contrapartes",
     "GET /api/v1/sat/invoices",
     "GET /api/v1/sat/invoices/{id}/xml",
     "GET /api/v1/transactions",
@@ -37,6 +39,7 @@
     "POST /api/v1/notifications/read-all",
     "POST /api/v1/notifications/{id}/read",
     "POST /api/v1/sat/certificate",
+    "POST /api/v1/sat/contrapartes",
     "POST /api/v1/sat/sync",
     "POST /api/v1/transactions",
     "POST /api/v1/transfers",
@@ -140,6 +143,10 @@
       "interestRate",
       "merchant",
       "reference"
+    ],
+    "CreateSatContraparteRequest": [
+      "alias",
+      "rfc"
     ],
     "CreateTransactionRequest": [
       "accountId",
@@ -315,6 +322,11 @@
       "rfc",
       "status",
       "validUntil"
+    ],
+    "SatContraparteResponse": [
+      "alias",
+      "id",
+      "rfc"
     ],
     "SortObject": [
       "empty",
