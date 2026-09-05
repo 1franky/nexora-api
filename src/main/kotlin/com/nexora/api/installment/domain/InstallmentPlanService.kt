@@ -105,7 +105,7 @@ class InstallmentPlanService(
         )
 
         val firstClosing = billingCycleCalculator.closingDateOnOrAfter(card.creditCard.closingDay, date)
-        val firstDueDate = billingCycleCalculator.paymentDueDateFor(firstClosing, card.creditCard.paymentDueDay)
+        val firstDueDate = billingCycleCalculator.paymentDueDateFor(firstClosing, card.creditCard.closingDay, card.creditCard.paymentDueDay)
 
         val regularAmount = totalAmount.divide(BigDecimal(installmentCount), 4, RoundingMode.DOWN)
         val lastAmount = totalAmount - regularAmount.multiply(BigDecimal(installmentCount - 1))
@@ -309,7 +309,7 @@ class InstallmentPlanService(
         )
 
         val firstClosing = billingCycleCalculator.closingDateOnOrAfter(card.creditCard.closingDay, date)
-        val firstDueDate = billingCycleCalculator.paymentDueDateFor(firstClosing, card.creditCard.paymentDueDay)
+        val firstDueDate = billingCycleCalculator.paymentDueDateFor(firstClosing, card.creditCard.closingDay, card.creditCard.paymentDueDay)
         val regularAmount = totalAmount.divide(BigDecimal(installmentCount), 4, RoundingMode.DOWN)
         val lastAmount = totalAmount - regularAmount.multiply(BigDecimal(installmentCount - 1))
 

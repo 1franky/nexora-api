@@ -31,9 +31,18 @@ class BillingCycleCalculatorTests {
     }
 
     @Test
-    fun `la fecha limite de pago cae en el mes siguiente al cierre`() {
-        val dueDate = calculator.paymentDueDateFor(closingDate = LocalDate.of(2026, 8, 15), paymentDueDay = 5)
+    fun `la fecha limite de pago cae en el mes siguiente al cierre cuando el dia limite es menor o igual al de corte`() {
+        val dueDate = calculator.paymentDueDateFor(closingDate = LocalDate.of(2026, 8, 15), closingDay = 15, paymentDueDay = 5)
         assertEquals(LocalDate.of(2026, 9, 5), dueDate)
+    }
+
+    @Test
+    fun `la fecha limite de pago cae en el mismo mes del cierre cuando el dia limite es mayor al de corte`() {
+        // Bug real: corte 1, límite 11 — antes del fix, esta fecha se calculaba
+        // siempre "un mes después" (11 de septiembre en vez de 11 de agosto), lo
+        // que hacía que el pago no apareciera como "próximo" hasta un mes tarde.
+        val dueDate = calculator.paymentDueDateFor(closingDate = LocalDate.of(2026, 8, 1), closingDay = 1, paymentDueDay = 11)
+        assertEquals(LocalDate.of(2026, 8, 11), dueDate)
     }
 
     @Test
@@ -66,6 +75,17 @@ class BillingCycleCalculatorTests {
         assertEquals(LocalDate.of(2026, 9, 27), cycle.closingDate)
         assertEquals(LocalDate.of(2026, 10, 7), cycle.paymentDueDate)
         assertFalse(cycle.isGracePeriod)
+    }
+
+    @Test
+    fun `con dia limite mayor al de corte, el pago del ciclo ya cerrado sigue siendo el mismo mes`() {
+        // Caso real reportado: corte el 1, límite el 11. El 5 de septiembre (después
+        // del corte del 1, antes del límite del 11) debe seguir mostrando el pago
+        // pendiente con fecha límite 11 de SEPTIEMBRE, no 11 de octubre.
+        val cycle = calculator.currentPaymentCycle(closingDay = 1, paymentDueDay = 11, date = LocalDate.of(2026, 9, 5))
+        assertEquals(LocalDate.of(2026, 9, 1), cycle.closingDate)
+        assertEquals(LocalDate.of(2026, 9, 11), cycle.paymentDueDate)
+        assertTrue(cycle.isGracePeriod)
     }
 
     @Test
