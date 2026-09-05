@@ -10,6 +10,9 @@ interface CfdiInvoiceRepository : JpaRepository<CfdiInvoice, UUID>, JpaSpecifica
 
     /** Idempotencia al sincronizar (plan, sección 6): mismo CFDI en un re-sync o en rangos que se traslapan no debe duplicarse. */
     fun findByUserIdAndUuidFiscal(userId: UUID, uuidFiscal: String): CfdiInvoice?
+
+    /** Usado por [CfdiInvoiceMaintenanceService] para recorrer y corregir las facturas ya guardadas de un usuario. */
+    fun findAllByUserId(userId: UUID): List<CfdiInvoice>
 }
 
 /**

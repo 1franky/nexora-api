@@ -75,6 +75,8 @@ data class CfdiInvoiceResponse(
     }
 }
 
+data class RecalcularIvaResponse(val corregidas: Int)
+
 @Schema(description = "RFC de una contraparte (empleador, proveedor de servicios, etc.) a registrar para poder sincronizar tus CFDI RECIBIDAS de ese RFC — el SAT exige el RFC del emisor específico en cada solicitud de recibidas.")
 data class CreateSatContraparteRequest(
     @field:NotBlank(message = "El RFC es obligatorio.")

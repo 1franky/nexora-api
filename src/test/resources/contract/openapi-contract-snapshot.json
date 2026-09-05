@@ -41,6 +41,7 @@
     "POST /api/v1/notifications/{id}/read",
     "POST /api/v1/sat/certificate",
     "POST /api/v1/sat/contrapartes",
+    "POST /api/v1/sat/invoices/recalcular-iva",
     "POST /api/v1/sat/sync",
     "POST /api/v1/transactions",
     "POST /api/v1/transfers",
@@ -292,6 +293,9 @@
       "paged",
       "sort",
       "unpaged"
+    ],
+    "RecalcularIvaResponse": [
+      "corregidas"
     ],
     "RefreshRequest": [
       "refreshToken"
