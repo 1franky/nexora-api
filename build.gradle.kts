@@ -40,6 +40,13 @@ dependencies {
 	implementation("org.apache.santuario:xmlsec:4.0.4")
 	implementation("org.bouncycastle:bcprov-jdk18on:1.79")
 	implementation("org.bouncycastle:bcpkix-jdk18on:1.79")
+	// Representación impresa (PDF) de un CFDI a partir de su XML ya guardado
+	// (CfdiInvoice.xmlContent) — se arma un HTML con los datos del comprobante
+	// y se renderiza a PDF; el QR de verificación contra el portal del SAT se
+	// genera aparte y se incrusta como imagen.
+	implementation("com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10")
+	implementation("com.google.zxing:core:3.5.3")
+	implementation("com.google.zxing:javase:3.5.3")
 	runtimeOnly("org.postgresql:postgresql")
 	testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
 	testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")

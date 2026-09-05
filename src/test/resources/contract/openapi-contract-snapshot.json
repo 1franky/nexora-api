@@ -18,6 +18,7 @@
     "GET /api/v1/sat/certificate",
     "GET /api/v1/sat/contrapartes",
     "GET /api/v1/sat/invoices",
+    "GET /api/v1/sat/invoices/{id}/pdf",
     "GET /api/v1/sat/invoices/{id}/xml",
     "GET /api/v1/transactions",
     "GET /api/v1/users/me",

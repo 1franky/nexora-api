@@ -73,6 +73,30 @@ class CfdiParserTests {
     }
 
     @Test
+    fun `con el traslado repetido a nivel concepto (como trae un CFDI real), el iva no se duplica`() {
+        // Un CFDI real siempre trae el desglose de impuestos DOS veces: una vez
+        // por cada Concepto (línea) y otra vez ya agregado en el Impuestos de
+        // nivel Comprobante. Antes de este fix, el XPath global sumaba ambos.
+        val xmlConConceptoYSuPropioImpuesto = cfdiXml().replace(
+            "<cfdi:Receptor Rfc=\"$RECEPTOR_RFC\" Nombre=\"Receptor de Prueba\" UsoCFDI=\"G03\"/>",
+            """
+            <cfdi:Receptor Rfc="$RECEPTOR_RFC" Nombre="Receptor de Prueba" UsoCFDI="G03"/>
+            <cfdi:Conceptos>
+              <cfdi:Concepto ClaveProdServ="81111500" Cantidad="1" ClaveUnidad="E48" Descripcion="Servicio" ValorUnitario="1000.00" Importe="1000.00">
+                <cfdi:Impuestos>
+                  <cfdi:Traslados>
+                    <cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="160.00"/>
+                  </cfdi:Traslados>
+                </cfdi:Impuestos>
+              </cfdi:Concepto>
+            </cfdi:Conceptos>
+            """.trimIndent(),
+        )
+        val invoice = parser.parse(userId, xmlConConceptoYSuPropioImpuesto.toByteArray(), ownerRfc = EMISOR_RFC)
+        assertEquals(BigDecimal("160.00"), invoice.iva, "no debe sumar el traslado del concepto y el del comprobante como si fueran dos IVAs distintos")
+    }
+
+    @Test
     fun `sin traslados de IVA, el iva queda en cero en vez de fallar`() {
         val xmlSinImpuestos = cfdiXml().replace(Regex("<cfdi:Impuestos[^>]*>.*</cfdi:Impuestos>", RegexOption.DOT_MATCHES_ALL), "")
         val invoice = parser.parse(userId, xmlSinImpuestos.toByteArray(), ownerRfc = EMISOR_RFC)

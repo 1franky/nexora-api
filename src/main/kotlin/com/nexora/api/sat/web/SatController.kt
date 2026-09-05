@@ -3,6 +3,7 @@ package com.nexora.api.sat.web
 import com.nexora.api.common.domain.NotFoundException
 import com.nexora.api.sat.domain.CfdiInvoiceRepository
 import com.nexora.api.sat.domain.CfdiInvoiceSpecifications
+import com.nexora.api.sat.domain.CfdiPdfService
 import com.nexora.api.sat.domain.CfdiTipo
 import com.nexora.api.sat.domain.SatCertificateService
 import com.nexora.api.sat.domain.SatContraparteService
@@ -42,6 +43,7 @@ class SatController(
     private val syncService: SatSyncService,
     private val cfdiInvoiceRepository: CfdiInvoiceRepository,
     private val contraparteService: SatContraparteService,
+    private val cfdiPdfService: CfdiPdfService,
 ) {
 
     @Operation(
@@ -114,14 +116,34 @@ class SatController(
         @AuthenticationPrincipal principal: NexoraUserDetails,
         @Parameter(description = "Id de la factura (no el UUID fiscal).") @PathVariable id: UUID,
     ): ResponseEntity<ByteArray> {
-        val invoice = cfdiInvoiceRepository.findById(id)
-            .filter { it.userId == principal.userId }
-            .orElseThrow { NotFoundException("Factura no encontrada.") }
+        val invoice = ownedInvoice(principal.userId, id)
         return ResponseEntity.ok()
             .contentType(MediaType.APPLICATION_XML)
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${invoice.uuidFiscal}.xml\"")
             .body(invoice.xmlContent)
     }
+
+    @Operation(
+        summary = "Descargar la representación impresa (PDF) de una factura",
+        description = "Se genera al vuelo a partir del XML ya guardado — no es el documento fiscal en sí (eso es el XML), es la versión legible que normalmente se comparte/imprime.",
+    )
+    @GetMapping("/invoices/{id}/pdf")
+    fun downloadPdf(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @Parameter(description = "Id de la factura (no el UUID fiscal).") @PathVariable id: UUID,
+    ): ResponseEntity<ByteArray> {
+        val invoice = ownedInvoice(principal.userId, id)
+        val pdf = cfdiPdfService.render(invoice.xmlContent)
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${invoice.uuidFiscal}.pdf\"")
+            .body(pdf)
+    }
+
+    private fun ownedInvoice(userId: UUID, invoiceId: UUID) =
+        cfdiInvoiceRepository.findById(invoiceId)
+            .filter { it.userId == userId }
+            .orElseThrow { NotFoundException("Factura no encontrada.") }
 
     @Operation(
         summary = "Listar los RFC de contraparte registrados",

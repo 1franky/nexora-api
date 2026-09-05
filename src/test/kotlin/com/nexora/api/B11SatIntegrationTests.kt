@@ -207,6 +207,12 @@ class B11SatIntegrationTests {
 
         mockMvc.perform(get("/api/v1/sat/invoices/$invoiceId/xml").with(auth))
             .andExpect(status().isOk)
+
+        val pdfResponse = mockMvc.perform(get("/api/v1/sat/invoices/$invoiceId/pdf").with(auth))
+            .andExpect(status().isOk)
+            .andReturn().response
+        assertEquals(MediaType.APPLICATION_PDF_VALUE, pdfResponse.contentType)
+        assertTrue(String(pdfResponse.contentAsByteArray, 0, 5, Charsets.US_ASCII).startsWith("%PDF-"))
     }
 
     @Test

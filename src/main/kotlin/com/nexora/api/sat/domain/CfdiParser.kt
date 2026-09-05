@@ -36,7 +36,17 @@ class CfdiParser {
         // Suma en BigDecimal de punta a punta — pasar por Double perdería
         // precisión en montos fiscales (y de paso, la escala del literal
         // original), inaceptable aunque sea "solo" para mostrar el dato.
-        val ivaTotal = xPath.evaluate("//*[local-name()='Traslado' and @Impuesto='002']/@Importe", document, XPathConstants.NODESET)
+        //
+        // Solo los Traslado que cuelgan DIRECTO del nodo Impuestos de nivel
+        // Comprobante (no ".//Traslado" a secas): cada Concepto también trae
+        // su propio desglose de impuestos por línea, y sumar ambos niveles
+        // duplicaría el IVA (un CFDI real siempre tiene los dos: el
+        // desglose por concepto y el total ya agregado a nivel comprobante).
+        val ivaTotal = xPath.evaluate(
+            "/*/*[local-name()='Impuestos']/*[local-name()='Traslados']/*[local-name()='Traslado' and @Impuesto='002']/@Importe",
+            document,
+            XPathConstants.NODESET,
+        )
             .let { it as org.w3c.dom.NodeList }
             .let { nodes -> (0 until nodes.length).map { BigDecimal(nodes.item(it).textContent) } }
             .fold(BigDecimal.ZERO) { acc, importe -> acc.add(importe) }
