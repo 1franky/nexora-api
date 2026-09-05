@@ -18,6 +18,7 @@
     "GET /api/v1/sat/certificate",
     "GET /api/v1/sat/contrapartes",
     "GET /api/v1/sat/invoices",
+    "GET /api/v1/sat/invoices/{id}/pdf",
     "GET /api/v1/sat/invoices/{id}/xml",
     "GET /api/v1/transactions",
     "GET /api/v1/users/me",
@@ -40,6 +41,7 @@
     "POST /api/v1/notifications/{id}/read",
     "POST /api/v1/sat/certificate",
     "POST /api/v1/sat/contrapartes",
+    "POST /api/v1/sat/invoices/recalcular-iva",
     "POST /api/v1/sat/sync",
     "POST /api/v1/transactions",
     "POST /api/v1/transfers",
@@ -291,6 +293,9 @@
       "paged",
       "sort",
       "unpaged"
+    ],
+    "RecalcularIvaResponse": [
+      "corregidas"
     ],
     "RefreshRequest": [
       "refreshToken"

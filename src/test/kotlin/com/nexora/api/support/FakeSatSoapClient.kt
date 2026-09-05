@@ -16,15 +16,36 @@ import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
-/** Un CFDI 4.0 mínimo válido para pruebas — mismo esqueleto que usan los tests de [com.nexora.api.sat.domain.CfdiParser]. */
+/**
+ * Un CFDI 4.0 mínimo válido para pruebas — mismo esqueleto que usan los
+ * tests de [com.nexora.api.sat.domain.CfdiParser], con un Concepto y sus
+ * Impuestos (además de Sello/NoCertificado/datos completos del Timbre) para
+ * que también sirva de fixture a [com.nexora.api.sat.domain.CfdiPdfService].
+ */
 fun testCfdiXml(emisorRfc: String, receptorRfc: String, uuid: String = UUID.randomUUID().toString()): String = """
     <cfdi:Comprobante xmlns:cfdi="http://www.sat.gob.mx/cfd/4" xmlns:tfd="http://www.sat.gob.mx/TimbreFiscalDigital"
         Version="4.0" Fecha="2026-01-15T12:30:00" SubTotal="1000.00" Total="1160.00" Moneda="MXN"
-        FormaPago="03" MetodoPago="PUE" TipoDeComprobante="I">
-      <cfdi:Emisor Rfc="$emisorRfc" Nombre="Emisor de Prueba"/>
-      <cfdi:Receptor Rfc="$receptorRfc" Nombre="Receptor de Prueba" UsoCFDI="G03"/>
+        FormaPago="03" MetodoPago="PUE" TipoDeComprobante="I" LugarExpedicion="06600"
+        Sello="firmaDePruebaDelComprobante123456" NoCertificado="30001000000500003416">
+      <cfdi:Emisor Rfc="$emisorRfc" Nombre="Emisor de Prueba" RegimenFiscal="601"/>
+      <cfdi:Receptor Rfc="$receptorRfc" Nombre="Receptor de Prueba" UsoCFDI="G03" RegimenFiscalReceptor="616" DomicilioFiscalReceptor="06600"/>
+      <cfdi:Conceptos>
+        <cfdi:Concepto ClaveProdServ="81111500" Cantidad="1" ClaveUnidad="E48" Unidad="Servicio" Descripcion="Servicio de prueba" ValorUnitario="1000.00" Importe="1000.00">
+          <cfdi:Impuestos>
+            <cfdi:Traslados>
+              <cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="160.00"/>
+            </cfdi:Traslados>
+          </cfdi:Impuestos>
+        </cfdi:Concepto>
+      </cfdi:Conceptos>
+      <cfdi:Impuestos TotalImpuestosTrasladados="160.00">
+        <cfdi:Traslados>
+          <cfdi:Traslado Base="1000.00" Impuesto="002" TipoFactor="Tasa" TasaOCuota="0.160000" Importe="160.00"/>
+        </cfdi:Traslados>
+      </cfdi:Impuestos>
       <cfdi:Complemento>
-        <tfd:TimbreFiscalDigital UUID="$uuid" FechaTimbrado="2026-01-15T12:31:00"/>
+        <tfd:TimbreFiscalDigital UUID="$uuid" FechaTimbrado="2026-01-15T12:31:00" SelloCFD="firmaDePruebaDelComprobante123456"
+            NoCertificadoSAT="30001000000500003415" SelloSAT="firmaDePruebaDelSat654321" RfcProvCertif="PCT991231ABC"/>
       </cfdi:Complemento>
     </cfdi:Comprobante>
 """.trimIndent()

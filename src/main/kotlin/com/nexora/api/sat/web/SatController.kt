@@ -1,8 +1,10 @@
 package com.nexora.api.sat.web
 
 import com.nexora.api.common.domain.NotFoundException
+import com.nexora.api.sat.domain.CfdiInvoiceMaintenanceService
 import com.nexora.api.sat.domain.CfdiInvoiceRepository
 import com.nexora.api.sat.domain.CfdiInvoiceSpecifications
+import com.nexora.api.sat.domain.CfdiPdfService
 import com.nexora.api.sat.domain.CfdiTipo
 import com.nexora.api.sat.domain.SatCertificateService
 import com.nexora.api.sat.domain.SatContraparteService
@@ -42,6 +44,8 @@ class SatController(
     private val syncService: SatSyncService,
     private val cfdiInvoiceRepository: CfdiInvoiceRepository,
     private val contraparteService: SatContraparteService,
+    private val cfdiPdfService: CfdiPdfService,
+    private val cfdiInvoiceMaintenanceService: CfdiInvoiceMaintenanceService,
 ) {
 
     @Operation(
@@ -114,14 +118,42 @@ class SatController(
         @AuthenticationPrincipal principal: NexoraUserDetails,
         @Parameter(description = "Id de la factura (no el UUID fiscal).") @PathVariable id: UUID,
     ): ResponseEntity<ByteArray> {
-        val invoice = cfdiInvoiceRepository.findById(id)
-            .filter { it.userId == principal.userId }
-            .orElseThrow { NotFoundException("Factura no encontrada.") }
+        val invoice = ownedInvoice(principal.userId, id)
         return ResponseEntity.ok()
             .contentType(MediaType.APPLICATION_XML)
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${invoice.uuidFiscal}.xml\"")
             .body(invoice.xmlContent)
     }
+
+    @Operation(
+        summary = "Descargar la representación impresa (PDF) de una factura",
+        description = "Se genera al vuelo a partir del XML ya guardado — no es el documento fiscal en sí (eso es el XML), es la versión legible que normalmente se comparte/imprime.",
+    )
+    @GetMapping("/invoices/{id}/pdf")
+    fun downloadPdf(
+        @AuthenticationPrincipal principal: NexoraUserDetails,
+        @Parameter(description = "Id de la factura (no el UUID fiscal).") @PathVariable id: UUID,
+    ): ResponseEntity<ByteArray> {
+        val invoice = ownedInvoice(principal.userId, id)
+        val pdf = cfdiPdfService.render(invoice.xmlContent)
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${invoice.uuidFiscal}.pdf\"")
+            .body(pdf)
+    }
+
+    private fun ownedInvoice(userId: UUID, invoiceId: UUID) =
+        cfdiInvoiceRepository.findById(invoiceId)
+            .filter { it.userId == userId }
+            .orElseThrow { NotFoundException("Factura no encontrada.") }
+
+    @Operation(
+        summary = "Recalcular el IVA de las facturas ya sincronizadas",
+        description = "Corrige en BD el bug de B13 (CfdiParser sumaba el IVA de cada concepto además del ya agregado a nivel comprobante, duplicándolo) — no vuelve a pedir nada al SAT, solo re-lee el XML que cada factura ya tiene guardado.",
+    )
+    @PostMapping("/invoices/recalcular-iva")
+    fun recalcularIva(@AuthenticationPrincipal principal: NexoraUserDetails): RecalcularIvaResponse =
+        RecalcularIvaResponse(corregidas = cfdiInvoiceMaintenanceService.recalcularIva(principal.userId))
 
     @Operation(
         summary = "Listar los RFC de contraparte registrados",

@@ -1,6 +1,7 @@
 package com.nexora.api
 
 import com.jayway.jsonpath.JsonPath
+import com.nexora.api.sat.domain.CfdiInvoice
 import com.nexora.api.sat.domain.CfdiInvoiceRepository
 import com.nexora.api.sat.domain.CfdiTipo
 import com.nexora.api.sat.domain.SatCertificateRepository
@@ -189,6 +190,47 @@ class B11SatIntegrationTests {
     }
 
     @Test
+    fun `recalcular-iva corrige el iva duplicado de una factura ya guardada, sin tocar al SAT`() {
+        val (auth, userId) = mockMvc.registerAuthenticateAndGetUserId("sat-recalcular-iva")
+        val xml = testCfdiXml(emisorRfc = "TEST101010JK0", receptorRfc = "OTRO010101XX1")
+        // Simula el estado que dejó el bug de B13 (ya corregido en CfdiParser): iva guardado en
+        // el doble de lo real, aunque el xmlContent (fuente de verdad) sea el correcto.
+        val facturaConIvaDuplicado = cfdiInvoiceRepository.save(
+            CfdiInvoice(
+                userId = userId,
+                uuidFiscal = UUID.randomUUID().toString(),
+                tipo = CfdiTipo.EMITIDAS,
+                rfcEmisor = "TEST101010JK0",
+                nombreEmisor = "Emisor de Prueba",
+                rfcReceptor = "OTRO010101XX1",
+                nombreReceptor = "Receptor de Prueba",
+                fechaEmision = Instant.now(),
+                subtotal = java.math.BigDecimal("1000.00"),
+                iva = java.math.BigDecimal("320.00"),
+                total = java.math.BigDecimal("1160.00"),
+                moneda = "MXN",
+                formaPago = "03",
+                metodoPago = "PUE",
+                usoCfdi = "G03",
+                xmlContent = xml.toByteArray(),
+            ),
+        )
+
+        val response = mockMvc.perform(post("/api/v1/sat/invoices/recalcular-iva").with(auth))
+            .andExpect(status().isOk)
+            .andReturn().response.contentAsString
+        assertEquals(1, JsonPath.read<Int>(response, "$.corregidas"))
+
+        val corregida = cfdiInvoiceRepository.findById(requireNotNull(facturaConIvaDuplicado.id)).orElseThrow()
+        assertEquals(0, java.math.BigDecimal("160.00").compareTo(corregida.iva))
+
+        // Volver a correrlo no debe reportar nada más que corregir.
+        val segundaVez = mockMvc.perform(post("/api/v1/sat/invoices/recalcular-iva").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+        assertEquals(0, JsonPath.read<Int>(segundaVez, "$.corregidas"))
+    }
+
+    @Test
     fun `listar y descargar el XML de una factura ya sincronizada`() {
         val (auth, userId) = mockMvc.registerAuthenticateAndGetUserId("sat-list")
         val keys = TestSatKeys.generate(rfc = "TEST050505EF5")
@@ -207,6 +249,12 @@ class B11SatIntegrationTests {
 
         mockMvc.perform(get("/api/v1/sat/invoices/$invoiceId/xml").with(auth))
             .andExpect(status().isOk)
+
+        val pdfResponse = mockMvc.perform(get("/api/v1/sat/invoices/$invoiceId/pdf").with(auth))
+            .andExpect(status().isOk)
+            .andReturn().response
+        assertEquals(MediaType.APPLICATION_PDF_VALUE, pdfResponse.contentType)
+        assertTrue(String(pdfResponse.contentAsByteArray, 0, 5, Charsets.US_ASCII).startsWith("%PDF-"))
     }
 
     @Test
