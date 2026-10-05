@@ -150,6 +150,25 @@ Para compilar o correr las pruebas fuera de Docker (las pruebas usan Testcontain
 
 > Nota: `./gradlew bootRun` por sí solo ya **no** conecta a la base de datos — Postgres no tiene puerto publicado al host. El flujo de desarrollo es `docker compose up --build`.
 
+## Flujo de ramas y despliegue
+
+`main` está protegida (sin push directo ni para admins, PR obligatorio, requiere el check `build` de CI en verde) porque cada merge ahí dispara el deploy automático a VPS (`deploy.yml`, ver abajo). `develop` es la rama por defecto y de integración: los desarrollos nuevos salen de `feature/...` ramas desde `develop`, se mergean de vuelta a `develop` vía PR (CI corre igual, pero no despliega nada), y cuando hay suficiente acumulado se abre un PR de `develop` → `main` para liberar todo junto.
+
+**Hotfix urgente en producción** (un bug que no puede esperar al ciclo normal de `develop`):
+
+1. Rama desde `main` (no desde `develop`, que puede traer trabajo a medio terminar):
+   ```bash
+   git checkout main && git pull origin main
+   git checkout -b hotfix/nombre-del-bug
+   ```
+2. Arreglar, commitear, PR de `hotfix/nombre-del-bug` → `main`. Al mergear, CI + deploy corren igual que cualquier merge a `main`: el fix llega a producción de inmediato.
+3. Traer el fix de vuelta a `develop` para que no se pierda ni se revierta sin querer en el próximo `develop` → `main`:
+   ```bash
+   git checkout develop && git pull origin develop
+   git merge main
+   git push origin develop
+   ```
+
 ## Despliegue (VPS)
 
 Se usa el mismo [`compose.yaml`](./compose.yaml) que en desarrollo, con un `.env` propio del VPS (`SPRING_PROFILES_ACTIVE=prod` y credenciales reales, nunca las de dev):

@@ -85,6 +85,8 @@ data class TransactionResponse(
     val counterAccountId: UUID?,
     val merchant: String?,
     val status: TransactionStatus,
+    @field:Schema(description = "Cargo programado que generó este movimiento (B14); null si se capturó a mano.")
+    val scheduledChargeId: UUID?,
     val createdAt: Instant,
 ) {
     companion object {
@@ -102,6 +104,7 @@ data class TransactionResponse(
             counterAccountId = transaction.counterAccountId,
             merchant = transaction.merchant,
             status = transaction.status,
+            scheduledChargeId = transaction.scheduledChargeId,
             createdAt = requireNotNull(transaction.createdAt),
         )
     }

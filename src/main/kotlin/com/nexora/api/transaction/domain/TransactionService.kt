@@ -48,7 +48,8 @@ class TransactionService(
         categoryId: UUID?,
         description: String?,
         reference: String?,
-    ): Transaction = recordSimple(userId, accountId, TransactionType.EXPENSE, amount, date, categoryId, description, reference)
+        scheduledChargeId: UUID? = null,
+    ): Transaction = recordSimple(userId, accountId, TransactionType.EXPENSE, amount, date, categoryId, description, reference, scheduledChargeId)
 
     private fun recordSimple(
         userId: UUID,
@@ -59,6 +60,7 @@ class TransactionService(
         categoryId: UUID?,
         description: String?,
         reference: String?,
+        scheduledChargeId: UUID? = null,
     ): Transaction {
         requirePositiveAmount(amount)
         val account = requireActiveOwnedAccount(userId, accountId)
@@ -83,6 +85,7 @@ class TransactionService(
             description = description?.trim(),
             reference = reference?.trim(),
             categoryId = categoryId,
+            scheduledChargeId = scheduledChargeId,
         )
         accountService.applyBalanceDelta(account, balanceEffect)
         val saved = transactionRepository.save(transaction)
@@ -170,6 +173,7 @@ class TransactionService(
         categoryId: UUID?,
         description: String?,
         reference: String?,
+        scheduledChargeId: UUID? = null,
     ): Transaction {
         requirePositiveAmount(amount)
         val cardAccount = requireActiveOwnedAccount(userId, cardAccountId)
@@ -191,6 +195,7 @@ class TransactionService(
             reference = reference?.trim(),
             merchant = merchant.trim(),
             categoryId = categoryId,
+            scheduledChargeId = scheduledChargeId,
         )
         accountService.applyBalanceDelta(cardAccount, balanceEffect)
         val saved = transactionRepository.save(transaction)
