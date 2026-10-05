@@ -82,4 +82,8 @@ class Transaction(
     @Column(nullable = false, length = 20)
     var status: TransactionStatus = TransactionStatus.POSTED,
 
+    /** Cargo programado que generó este movimiento (B14), si lo generó uno. */
+    @Column(name = "scheduled_charge_id")
+    var scheduledChargeId: UUID? = null,
+
 ) : BaseEntity()

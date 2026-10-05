@@ -2,6 +2,7 @@
   "endpoints": [
     "DELETE /api/v1/sat/certificate",
     "DELETE /api/v1/sat/contrapartes/{id}",
+    "DELETE /api/v1/scheduled-charges/{id}",
     "DELETE /api/v1/transactions/{id}",
     "GET /api/v1/accounts",
     "GET /api/v1/accounts/summary",
@@ -20,6 +21,8 @@
     "GET /api/v1/sat/invoices",
     "GET /api/v1/sat/invoices/{id}/pdf",
     "GET /api/v1/sat/invoices/{id}/xml",
+    "GET /api/v1/scheduled-charges",
+    "GET /api/v1/scheduled-charges/{id}",
     "GET /api/v1/transactions",
     "GET /api/v1/users/me",
     "PATCH /api/v1/categories/{id}",
@@ -43,6 +46,9 @@
     "POST /api/v1/sat/contrapartes",
     "POST /api/v1/sat/invoices/recalcular-iva",
     "POST /api/v1/sat/sync",
+    "POST /api/v1/scheduled-charges",
+    "POST /api/v1/scheduled-charges/{id}/pause",
+    "POST /api/v1/scheduled-charges/{id}/resume",
     "POST /api/v1/transactions",
     "POST /api/v1/transfers",
     "POST /api/v1/users",
@@ -50,6 +56,7 @@
     "PUT /api/v1/credit-cards/{id}",
     "PUT /api/v1/credit-cards/{id}/purchases/{transactionId}",
     "PUT /api/v1/installment-plans/{id}",
+    "PUT /api/v1/scheduled-charges/{id}",
     "PUT /api/v1/transactions/{id}"
   ],
   "schemas": {
@@ -333,6 +340,39 @@
       "id",
       "rfc"
     ],
+    "ScheduledChargeRequest": [
+      "accountId",
+      "amount",
+      "categoryId",
+      "dayOfMonth",
+      "description",
+      "endDate",
+      "frequency",
+      "monthOfYear",
+      "name",
+      "startDate"
+    ],
+    "ScheduledChargeResponse": [
+      "accountId",
+      "accountName",
+      "accountType",
+      "amount",
+      "categoryId",
+      "createdAt",
+      "currency",
+      "dayOfMonth",
+      "description",
+      "endDate",
+      "frequency",
+      "id",
+      "lastError",
+      "lastRunDate",
+      "monthOfYear",
+      "name",
+      "nextRunDate",
+      "startDate",
+      "status"
+    ],
     "SortObject": [
       "empty",
       "sorted",
@@ -360,6 +400,7 @@
       "id",
       "merchant",
       "reference",
+      "scheduledChargeId",
       "status",
       "transferGroupId",
       "type"
