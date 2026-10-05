@@ -33,6 +33,11 @@ enum class AuditEventType {
 
     /** El usuario desconectó su e.firma (o el SAT la rechazó y se marcó ERROR_AUTENTICACION). */
     SAT_CERTIFICATE_REVOKED,
+
+    /** Cargos programados (B14). Los movimientos que generan ya se auditan solos como TRANSACTION_CREATED/CREDIT_CARD_PURCHASE_CREATED. */
+    SCHEDULED_CHARGE_CREATED,
+    SCHEDULED_CHARGE_UPDATED,
+    SCHEDULED_CHARGE_CANCELLED,
 }
 
 /**

@@ -29,6 +29,10 @@ import java.util.UUID
  * directamente al terminar una sincronización, porque son un evento
  * puntual disparado por un job async, no una regla recurrente evaluada
  * contra "hoy" como el resto de este enum.
+ *
+ * SCHEDULED_CHARGE_POSTED/SCHEDULED_CHARGE_FAILED (B14) siguen el mismo
+ * patrón: las crea [com.nexora.api.scheduledcharge.domain.ScheduledChargeService]
+ * cuando el job diario registra (o no puede registrar) un cargo programado.
  */
 enum class NotificationType {
     PAYMENT_DUE,
@@ -39,6 +43,8 @@ enum class NotificationType {
     UNUSUAL_EXPENSE,
     SAT_SYNC_COMPLETED,
     SAT_SYNC_FAILED,
+    SCHEDULED_CHARGE_POSTED,
+    SCHEDULED_CHARGE_FAILED,
 }
 
 enum class NotificationStatus {
