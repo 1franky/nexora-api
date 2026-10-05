@@ -92,6 +92,20 @@ class CategoryManagementTests {
     }
 
     @Test
+    fun `el listado viene en orden alfabetico, sin importar mayusculas ni acentos`() {
+        val auth = registerAndAuth("catorden")
+        listOf("Zapatos", "comida", "Área común", "Banco", "agua").forEach { createCategory(auth, it, "EXPENSE") }
+
+        val response = mockMvc.perform(get("/api/v1/categories").with(auth))
+            .andExpect(status().isOk).andReturn().response.contentAsString
+
+        assertEquals(
+            listOf("agua", "Área común", "Banco", "comida", "Zapatos"),
+            JsonPath.read<List<String>>(response, "$[*].name"),
+        )
+    }
+
+    @Test
     fun `una categoria de otro usuario es rechazada como si no existiera`() {
         val auth = registerAndAuth("catajeno")
         val otherAuth = registerAndAuth("catotro")
