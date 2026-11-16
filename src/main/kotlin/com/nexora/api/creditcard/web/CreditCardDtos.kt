@@ -2,6 +2,7 @@ package com.nexora.api.creditcard.web
 
 import com.nexora.api.creditcard.domain.CreditCardStatus
 import com.nexora.api.creditcard.domain.CreditCardView
+import com.nexora.api.creditcard.domain.UpcomingCardPayment
 import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.DecimalMin
 import jakarta.validation.constraints.Max
@@ -80,12 +81,12 @@ data class CreditCardResponse(
     val paymentDueDay: Int,
     @field:Schema(description = "Próxima fecha de corte, calculada para hoy.")
     val nextClosingDate: LocalDate,
-    @field:Schema(description = "Próxima fecha límite de pago, calculada para hoy.")
+    @field:Schema(description = "Fecha límite del pago que toca a continuación, calculada para hoy. Si hoy cae en el período de gracia de un ciclo ya cerrado y con saldo pendiente, es la fecha de ese ciclo (no la del corte siguiente).")
     val nextPaymentDueDate: LocalDate,
     val status: CreditCardStatus,
 ) {
     companion object {
-        fun from(view: CreditCardView): CreditCardResponse = CreditCardResponse(
+        fun from(view: CreditCardView, upcomingPayment: UpcomingCardPayment): CreditCardResponse = CreditCardResponse(
             id = requireNotNull(view.creditCard.id),
             accountId = requireNotNull(view.account.id),
             name = view.creditCard.name,
@@ -98,7 +99,7 @@ data class CreditCardResponse(
             closingDay = view.creditCard.closingDay,
             paymentDueDay = view.creditCard.paymentDueDay,
             nextClosingDate = view.nextClosingDate,
-            nextPaymentDueDate = view.nextPaymentDueDate,
+            nextPaymentDueDate = upcomingPayment.dueDate,
             status = view.creditCard.status,
         )
     }

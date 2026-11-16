@@ -1,6 +1,7 @@
 package com.nexora.api.notification.domain
 
 import com.nexora.api.common.domain.NotFoundException
+import com.nexora.api.creditcard.domain.CardPaymentScheduleService
 import com.nexora.api.creditcard.domain.CreditCardService
 import com.nexora.api.installment.domain.InstallmentPlanService
 import com.nexora.api.installment.domain.InstallmentRepository
@@ -23,6 +24,7 @@ class NotificationService(
     private val notificationRepository: NotificationRepository,
     private val userRepository: UserRepository,
     private val creditCardService: CreditCardService,
+    private val cardPaymentScheduleService: CardPaymentScheduleService,
     private val installmentPlanService: InstallmentPlanService,
     private val installmentRepository: InstallmentRepository,
 ) {
@@ -41,16 +43,21 @@ class NotificationService(
         val created = mutableListOf<Notification>()
 
         val cards = creditCardService.listForUser(userId)
+        val upcomingPaymentsByCard = cardPaymentScheduleService.upcomingPaymentsForUser(userId, today)
         for (card in cards) {
             if (card.currentDebt <= BigDecimal.ZERO) continue
-            val daysUntilDue = ChronoUnit.DAYS.between(today, card.nextPaymentDueDate)
+            // El pago que de verdad toca (considera el período de gracia del ciclo ya cerrado),
+            // no card.nextPaymentDueDate, que siempre apunta al corte siguiente.
+            val payment = upcomingPaymentsByCard[card.creditCard.id] ?: continue
+            if (payment.expectedPayment <= BigDecimal.ZERO) continue
+            val daysUntilDue = ChronoUnit.DAYS.between(today, payment.dueDate)
             val type = when {
                 daysUntilDue == 0L -> NotificationType.PAYMENT_DUE
                 daysUntilDue in 1..DUE_SOON_WINDOW_DAYS -> NotificationType.PAYMENT_DUE_SOON
                 else -> null
             } ?: continue
 
-            val amount = card.currentDebt.setScale(2, RoundingMode.HALF_UP)
+            val amount = payment.expectedPayment.setScale(2, RoundingMode.HALF_UP)
             val message = if (type == NotificationType.PAYMENT_DUE) {
                 "Tu tarjeta ${card.creditCard.name} vence hoy. Pago estimado: \$$amount."
             } else {

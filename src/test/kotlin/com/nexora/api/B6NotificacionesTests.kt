@@ -1,6 +1,7 @@
 package com.nexora.api
 
 import com.jayway.jsonpath.JsonPath
+import com.nexora.api.creditcard.domain.BillingCycleCalculator
 import com.nexora.api.notification.domain.NotificationService
 import com.nexora.api.notification.domain.NotificationType
 import org.junit.jupiter.api.Test
@@ -16,6 +17,7 @@ import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.request.RequestPostProcessor
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.status
 import java.time.LocalDate
+import java.time.YearMonth
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -43,6 +45,9 @@ class B6NotificacionesTests {
 
     @Autowired
     lateinit var notificationService: NotificationService
+
+    @Autowired
+    lateinit var billingCycleCalculator: BillingCycleCalculator
 
     private val today: LocalDate = LocalDate.now()
 
@@ -110,6 +115,39 @@ class B6NotificacionesTests {
         notificationService.generateForUser(userId, referenceDay)
 
         assertEquals(1, notificationService.listForUser(userId, false).size)
+    }
+
+    @Test
+    fun `en el periodo de gracia la alerta es por el ciclo ya cerrado, no por el del mes siguiente`() {
+        // Corte 1, pago 15. La compra (hoy) entra en el ciclo que cierra el día 1 del mes
+        // que sigue; simulamos el día 13 de ese mes: ese ciclo ya cerró y vence el 15 —
+        // dentro de 2 días —, aunque el corte "siguiente" (día 1 del otro mes) lleve a
+        // un pago del 15 del mes siguiente. Antes de la corrección no se generaba alerta.
+        val (auth, userId) = registerAndAuth("gracia")
+        val cardId = createCreditCard(auth, closingDay = 1, paymentDueDay = 15)
+        purchase(auth, cardId, "1000")
+        val graceMonth = YearMonth.from(today).plusMonths(1)
+
+        notificationService.generateForUser(userId, graceMonth.atDay(13))
+
+        val notifications = notificationService.listForUser(userId, false)
+        assertEquals(1, notifications.size)
+        assertEquals(NotificationType.PAYMENT_DUE_SOON, notifications[0].type)
+        assertTrue(notifications[0].message.contains("2 día"), "el mensaje debe mencionar 2 días: ${notifications[0].message}")
+    }
+
+    @Test
+    fun `el detalle de la tarjeta muestra la fecha de pago del ciclo en gracia`() {
+        // Elegimos corte/pago de modo que HOY caiga en el período de gracia del último corte.
+        val day = today.dayOfMonth
+        val (closingDay, paymentDueDay) = if (day in 2..28) (day - 1) to minOf(day + 5, 28) else 28 to 5
+        val cycle = billingCycleCalculator.currentPaymentCycle(closingDay, paymentDueDay, today)
+        assertTrue(cycle.isGracePeriod, "precondición: hoy debe estar en período de gracia")
+        val (auth, _) = registerAndAuth("detallegracia")
+        val cardId = createCreditCard(auth, closingDay, paymentDueDay)
+        purchase(auth, cardId, "1000", cycle.closingDate.minusDays(3))
+
+        assertEquals(cycle.paymentDueDate, nextPaymentDueDateOf(auth, cardId))
     }
 
     @Test
@@ -184,24 +222,24 @@ class B6NotificacionesTests {
         return mockMvc.registerAuthenticateAndGetUserId(prefix)
     }
 
-    private fun createCreditCard(auth: RequestPostProcessor): String {
+    private fun createCreditCard(auth: RequestPostProcessor, closingDay: Int = 15, paymentDueDay: Int = 5): String {
         val response = mockMvc.perform(
             post("/api/v1/credit-cards")
                 .with(auth)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(
-                    """{"name":"BBVA Azul","bank":"BBVA","last4":"1234","creditLimit":50000,"closingDay":15,"paymentDueDay":5,"currency":"MXN"}"""
+                    """{"name":"BBVA Azul","bank":"BBVA","last4":"1234","creditLimit":50000,"closingDay":$closingDay,"paymentDueDay":$paymentDueDay,"currency":"MXN"}"""
                 )
         ).andExpect(status().isCreated).andReturn().response.contentAsString
         return JsonPath.read(response, "$.id")
     }
 
-    private fun purchase(auth: RequestPostProcessor, cardId: String, amount: String) {
+    private fun purchase(auth: RequestPostProcessor, cardId: String, amount: String, date: LocalDate = today) {
         mockMvc.perform(
             post("/api/v1/credit-cards/$cardId/purchases")
                 .with(auth)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("""{"amount":$amount,"date":"$today","merchant":"Amazon"}""")
+                .content("""{"amount":$amount,"date":"$date","merchant":"Amazon"}""")
         ).andExpect(status().isCreated)
     }
 
