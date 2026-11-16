@@ -3,7 +3,7 @@ package com.nexora.api.dashboard.web
 import com.nexora.api.dashboard.domain.CategoryAmount
 import com.nexora.api.dashboard.domain.DashboardView
 import com.nexora.api.dashboard.domain.MonthlyPoint
-import com.nexora.api.dashboard.domain.UpcomingCardPayment
+import com.nexora.api.creditcard.domain.UpcomingCardPayment
 import com.nexora.api.transaction.web.TransactionResponse
 import io.swagger.v3.oas.annotations.media.Schema
 import java.math.BigDecimal

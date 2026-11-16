@@ -2,7 +2,9 @@ package com.nexora.api.creditcard.web
 
 import com.nexora.api.common.domain.BusinessRuleException
 import com.nexora.api.common.web.ApiError
+import com.nexora.api.creditcard.domain.CardPaymentScheduleService
 import com.nexora.api.creditcard.domain.CreditCardService
+import com.nexora.api.creditcard.domain.CreditCardView
 import com.nexora.api.installment.domain.InstallmentPlanService
 import com.nexora.api.transaction.domain.TransactionService
 import com.nexora.api.transaction.web.TransactionResponse
@@ -34,7 +36,11 @@ class CreditCardController(
     private val creditCardService: CreditCardService,
     private val transactionService: TransactionService,
     private val installmentPlanService: InstallmentPlanService,
+    private val cardPaymentScheduleService: CardPaymentScheduleService,
 ) {
+
+    private fun toResponse(userId: UUID, view: CreditCardView): CreditCardResponse =
+        CreditCardResponse.from(view, cardPaymentScheduleService.upcomingPaymentForCard(userId, view))
 
     @Operation(summary = "Crear una tarjeta de crédito", description = "También crea la Account subyacente (tipo CREDIT_CARD) con saldo inicial 0.")
     @ApiResponse(responseCode = "201", description = "Tarjeta creada.")
@@ -53,20 +59,24 @@ class CreditCardController(
             paymentDueDay = request.paymentDueDay,
             currency = request.currency,
         )
-        return ResponseEntity.status(HttpStatus.CREATED).body(CreditCardResponse.from(view))
+        return ResponseEntity.status(HttpStatus.CREATED).body(toResponse(principal.userId, view))
     }
 
     @Operation(summary = "Listar tarjetas de crédito")
     @GetMapping
-    fun list(@AuthenticationPrincipal principal: NexoraUserDetails): List<CreditCardResponse> =
-        creditCardService.listForUser(principal.userId).map(CreditCardResponse::from)
+    fun list(@AuthenticationPrincipal principal: NexoraUserDetails): List<CreditCardResponse> {
+        val upcomingPaymentsByCard = cardPaymentScheduleService.upcomingPaymentsForUser(principal.userId)
+        return creditCardService.listForUser(principal.userId).map { view ->
+            CreditCardResponse.from(view, upcomingPaymentsByCard.getValue(requireNotNull(view.creditCard.id)))
+        }
+    }
 
     @Operation(summary = "Consultar una tarjeta", description = "Incluye deuda actual, crédito disponible y próxima fecha de corte/pago, ya calculadas para hoy.")
     @GetMapping("/{id}")
     fun get(
         @AuthenticationPrincipal principal: NexoraUserDetails,
         @Parameter(description = "Id de la tarjeta.") @PathVariable id: UUID,
-    ): CreditCardResponse = CreditCardResponse.from(creditCardService.getOwned(principal.userId, id))
+    ): CreditCardResponse = toResponse(principal.userId, creditCardService.getOwned(principal.userId, id))
 
     @Operation(
         summary = "Editar nombre, banco, límite y días de corte/pago",
@@ -87,7 +97,7 @@ class CreditCardController(
             closingDay = request.closingDay,
             paymentDueDay = request.paymentDueDay,
         )
-        return CreditCardResponse.from(view)
+        return toResponse(principal.userId, view)
     }
 
     @Operation(
