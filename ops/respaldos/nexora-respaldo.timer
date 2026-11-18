@@ -1,0 +1,13 @@
+# Todos los días a las 4:15 (hora del centro de México). Va después de la sincronización con el SAT (3:00) y del
+# respaldo de Velora (3:30, mismo VPS) para no competir por disco ni respaldar a media sincronización.
+# Persistent: si el VPS estaba apagado, corre al arrancar.
+[Unit]
+Description=Respaldo diario de Nexora
+
+[Timer]
+OnCalendar=*-*-* 04:15:00 America/Mexico_City
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

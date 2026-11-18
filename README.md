@@ -181,6 +181,22 @@ La imagen de la API se construye con el [`Dockerfile`](./Dockerfile) (multi-stag
 
 La JVM corre con `-Duser.timezone=America/Mexico_City` (fijo en el `ENTRYPOINT` del Dockerfile): todo cálculo de "hoy"/"este mes" sin zona explícita (dashboard, ciclo de facturación de tarjetas, notificaciones) usa esa zona en vez del UTC por defecto de la imagen base — de lo contrario, entre las 6pm y medianoche hora CDMX, el servidor ya calcula con la fecha del día siguiente.
 
+## Respaldos
+
+Respaldo diario y cifrado de PostgreSQL con restic a un bucket privado de Cloudflare R2 (4:15 hora CDMX, retención 7 diarios / 4 semanales / 6 mensuales). Si algo falla, abre un issue con la etiqueta `respaldo`. Un job del CI (`respaldos`) respalda, restaura y compara en cada PR. Instalación, restauración y prueba trimestral: [`ops/respaldos/README.md`](./ops/respaldos/README.md).
+
+**RPO:** 24 horas. **RTO:** menos de 1 hora, una vez que existe el VPS.
+
+**Recuperación ante desastre (VPS perdido):**
+
+1. VPS nuevo con Docker, el usuario `francisco` en el grupo `docker` y el acceso público apuntando al puerto 3005.
+2. Clona el repositorio en `/home/francisco/docker/nexora/nexora-api` y copia el `.env` desde tu gestor de contraseñas. Debe tener **la misma `NEXORA_SAT_ENCRYPTION_KEY`**: la e.firma va cifrada en la base y sin esa llave cada usuario tiene que volver a subirla.
+3. Restaura la base: [`ops/respaldos/README.md`](./ops/respaldos/README.md) → Restaurar.
+4. Levanta la API y reinstala el timer de respaldos.
+5. Actualiza los secretos `VPS_HOST` y `VPS_DEPLOY_KEY` del workflow de despliegue.
+
+**Mantenimiento:** cada 3 meses, una prueba de restauración real en otra máquina (`ops/respaldos/probar-restauracion.sh`), anotada en el registro del runbook. Cada año, rotar los tokens de R2 y de alertas (`/etc/nexora/respaldo.env`).
+
 ## Estado del proyecto
 
 En construcción. **B1 (base del proyecto)** a **B7 (calidad — autenticación JWT)** completos: login con JWT propio (access + refresh token rotado) y rate limiting, cuentas, categorías, ingresos/gastos, transferencias atómicas, tarjetas de crédito con ciclo de facturación (corte/pago), compras y pagos, compras a meses (con o sin intereses) con calendario de cuotas, un dashboard con las métricas del plan (patrimonio, disponible, gastos por categoría, deuda de tarjetas, próximos pagos, compromiso mensual MSI/MCI y evolución histórica), y notificaciones de pagos/cuotas por vencer (generadas al vuelo y por un scheduler diario). Ver [`plan.md`](./plan.md) para el plan de desarrollo completo (modelo de datos, roadmap, reglas arquitectónicas y MVP).

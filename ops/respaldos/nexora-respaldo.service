@@ -1,0 +1,16 @@
+# Respaldo de Nexora. Instalar en /etc/systemd/system/ (ver ops/respaldos/README.md).
+[Unit]
+Description=Respaldo cifrado de Nexora (PostgreSQL) a Cloudflare R2
+Wants=network-online.target
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+# Usuario del grupo docker: no hace falta root.
+User=francisco
+EnvironmentFile=/etc/nexora/respaldo.env
+ExecStart=/home/francisco/docker/nexora/nexora-api/ops/respaldos/respaldar.sh
+# Caché de restic fuera de /tmp para no volver a descargar índices cada vez (restic separa la caché por repositorio).
+Environment=RESTIC_CACHE_DIR=/home/francisco/.cache/restic
+Nice=10
+IOSchedulingClass=idle
