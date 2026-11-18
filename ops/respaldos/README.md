@@ -151,4 +151,5 @@ Termina en `✓ Respaldo restaurable y consistente` o con la lista de problemas 
 
 | Fecha | Instantánea | Dónde | Resultado |
 |---|---|---|---|
-| — | — | — | Pendiente: primera prueba después de instalar en el VPS |
+| 2026-11-18 | `05c782ee` (primer respaldo) | VPS, misma máquina (no cuenta como la trimestral) | ✓ `restic check` al 10 % (1 de 1 pack), restaurada en 3 s, Flyway v14, huella igual a la de producción |
+| — | — | — | Pendiente: primera prueba trimestral en una máquina aparte |
