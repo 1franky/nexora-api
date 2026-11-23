@@ -37,6 +37,8 @@ management:
       show-details: when-authorized
 
 springdoc:
+  # Claves en orden alfabético: el contrato exportado (openapi/openapi-v1.yaml) sale idéntico en cada build.
+  writer-with-order-by-keys: true
   swagger-ui:
     path: /swagger-ui.html
   api-docs:

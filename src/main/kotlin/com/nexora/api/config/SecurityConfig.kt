@@ -72,6 +72,8 @@ class SecurityConfig(
                 authorize("/swagger-ui/**", permitAll)
                 authorize("/swagger-ui.html", permitAll)
                 authorize("/v3/api-docs/**", permitAll)
+                // Mismo documento en YAML (openapi/openapi-v1.yaml se genera de aquí, ver OpenApiExportTests).
+                authorize("/v3/api-docs.yaml", permitAll)
                 authorize(HttpMethod.POST, "/api/v1/users", permitAll)
                 authorize("/api/v1/auth/**", permitAll)
                 authorize(anyRequest, authenticated)

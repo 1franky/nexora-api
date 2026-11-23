@@ -1,0 +1,2836 @@
+openapi: 3.1.0
+info:
+  description: API central de la plataforma de finanzas personales Nexora.
+  title: Nexora API
+  version: 1.0.0
+security:
+- bearerAuth: []
+tags:
+- description: "Login, refresh y logout con JWT propio. Todo público, no requiere\
+    \ Authorization."
+  name: Autenticación
+- description: "Historial de eventos financieros del usuario (compras, pagos, movimientos,\
+    \ planes MSI/MCI) — plan.md, sección 13."
+  name: Auditoría
+- description: Conexión de la e.firma y descarga de CFDI (facturas) del SAT — plan-integracion-sat.md.
+  name: SAT
+- description: Movimiento de dinero entre dos cuentas propias del usuario.
+  name: Transferencias
+- description: Categorías de ingreso/gasto para clasificar movimientos.
+  name: Categorías
+- description: "Métricas agregadas para la pantalla principal: disponible, patrimonio,\
+    \ deuda, próximos pagos, evolución."
+  name: Dashboard
+- description: "Avisos generados a partir de PAYMENT_DUE/PAYMENT_DUE_SOON/INSTALLMENT_DUE.\
+    \ PAYMENT_OVERDUE/BUDGET_EXCEEDED/UNUSUAL_EXPENSE están declarados pero aún no\
+    \ se disparan (B7, issue #7)."
+  name: Notificaciones
+- description: Compras a meses (con o sin intereses) de una tarjeta y el calendario
+    de sus cuotas.
+  name: Planes MSI/MCI
+- description: "Ingresos, gastos, y edición/borrado de cualquier movimiento (incluye\
+    \ transferencias y tarjeta)."
+  name: Movimientos
+- description: Cuentas de débito/ahorro/AFORE/PPR y tarjetas de crédito (estas últimas
+    también en /credit-cards).
+  name: Cuentas
+- description: "Alta/edición de tarjetas, compras de contado y pagos. Las compras\
+    \ a MSI/MCI viven en /installment-plans."
+  name: Tarjetas de crédito
+- description: Suscripciones/domiciliaciones que generan un movimiento automáticamente
+    en su fecha.
+  name: Cargos programados
+- description: "Reporte financiero por rango de fechas libre, opcionalmente acotado\
+    \ a una cuenta o tipo de movimiento."
+  name: Reportes
+- description: Registro de cuentas y perfil del usuario autenticado.
+  name: Usuarios
+paths:
+  /api/v1/accounts:
+    get:
+      description: "Todas las cuentas del usuario (incluye tarjetas de crédito), ordenadas\
+        \ por nombre."
+      operationId: accountList
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AccountResponse"
+          description: OK
+      summary: Listar cuentas
+      tags:
+      - Cuentas
+    post:
+      description: "DEBIT, SAVINGS, AFORE o PPR. Las tarjetas de crédito se crean\
+        \ vía POST /api/v1/credit-cards, no aquí."
+      operationId: accountCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAccountRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+          description: Cuenta creada.
+      summary: Crear una cuenta
+      tags:
+      - Cuentas
+  /api/v1/accounts/summary:
+    get:
+      description: "Suma de las cuentas marcadas includeInAvailableBalance/includeInNetWorth,\
+        \ convertidas a MXN si están en otra moneda (ver ExchangeRateService)."
+      operationId: accountSummary
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BalanceSummaryResponse"
+          description: OK
+      summary: Disponible y patrimonio neto
+      tags:
+      - Cuentas
+  /api/v1/accounts/{id}:
+    get:
+      operationId: accountGet
+      parameters:
+      - description: Id de la cuenta.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "404":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: "No existe, o pertenece a otro usuario (se trata igual que\
+            \ \"no existe\", nunca se revela la existencia ajena)."
+      summary: Consultar una cuenta
+      tags:
+      - Cuentas
+    put:
+      description: "Tipo, moneda y saldo quedan fuera a propósito: cambiarlos romperí\
+        a el significado del historial de movimientos ya registrados sobre esta cuenta."
+      operationId: accountUpdate
+      parameters:
+      - description: Id de la cuenta.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAccountRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+          description: OK
+      summary: Editar nombre e inclusión en disponible/patrimonio
+      tags:
+      - Cuentas
+  /api/v1/audit-log:
+    get:
+      description: Más recientes primero. Sobrevive al borrado de la entidad afectada
+        (entityId puede ya no existir).
+      operationId: auditLogList
+      parameters:
+      - description: Cuántos eventos traer (1-200).
+        in: query
+        name: limit
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 50
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuditLogResponse"
+          description: OK
+      summary: Listar el historial de auditoría
+      tags:
+      - Auditoría
+  /api/v1/auth/forgot-password:
+    post:
+      description: "Envía un código de 6 dígitos por email, válido 10 minutos. La\
+        \ respuesta es SIEMPRE la misma exista o no una cuenta con ese email — no\
+        \ revela qué emails están registrados."
+      operationId: authForgotPassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ForgotPasswordRequest"
+        required: true
+      responses:
+        "200":
+          description: "Si existe una cuenta con ese email, se envió un código."
+      security: []
+      summary: Pedir código para restablecer la contraseña
+      tags:
+      - Autenticación
+  /api/v1/auth/login:
+    post:
+      description: "Devuelve un access token (de vida corta, ver JWT_ACCESS_TOKEN_TTL_MINUTES)\
+        \ y un refresh token."
+      operationId: authLogin
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+          description: Par de tokens emitido.
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Email o contraseña inválidos.
+      security: []
+      summary: Iniciar sesión
+      tags:
+      - Autenticación
+  /api/v1/auth/logout:
+    post:
+      description: Revoca el refresh token — el access token ya emitido sigue siendo
+        válido hasta que expire por sí solo.
+      operationId: authLogout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "204":
+          description: Sesión cerrada (o el refresh token ya no era válido; es idempotente).
+      security: []
+      summary: Cerrar sesión
+      tags:
+      - Autenticación
+  /api/v1/auth/refresh:
+    post:
+      description: "Cambia un refresh token válido por un nuevo par de tokens (rotació\
+        n: el refresh token usado queda invalidado)."
+      operationId: authRefresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TokenResponse"
+          description: Nuevo par de tokens emitido.
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: "El refresh token es inválido, expiró, o ya fue usado/revocado."
+      security: []
+      summary: Renovar el access token
+      tags:
+      - Autenticación
+  /api/v1/auth/reset-password:
+    post:
+      description: "Si el código es correcto, actualiza la contraseña y cierra todas\
+        \ las sesiones activas del usuario (hay que loguearse de nuevo)."
+      operationId: authResetPassword
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResetPasswordRequest"
+        required: true
+      responses:
+        "204":
+          description: Contraseña actualizada.
+        "401":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: "El código es inválido, expiró, ya se usó, o se agotaron los\
+            \ intentos."
+      security: []
+      summary: Restablecer la contraseña con el código recibido
+      tags:
+      - Autenticación
+  /api/v1/categories:
+    get:
+      description: Incluye las archivadas — un movimiento ya categorizado sigue mostrando
+        su categoría aunque esté archivada.
+      operationId: categoryList
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CategoryResponse"
+          description: OK
+      summary: Listar categorías
+      tags:
+      - Categorías
+    post:
+      operationId: categoryCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCategoryRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+          description: Categoría creada.
+      summary: Crear una categoría
+      tags:
+      - Categorías
+  /api/v1/categories/{id}:
+    patch:
+      description: El tipo (INCOME/EXPENSE) no se puede editar una vez creada.
+      operationId: categoryUpdate
+      parameters:
+      - description: Id de la categoría.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCategoryRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+          description: OK
+      summary: Renombrar una categoría
+      tags:
+      - Categorías
+  /api/v1/categories/{id}/activate:
+    post:
+      operationId: categoryActivate
+      parameters:
+      - description: Id de la categoría.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+          description: OK
+      summary: Reactivar una categoría archivada
+      tags:
+      - Categorías
+  /api/v1/categories/{id}/archive:
+    post:
+      description: "Deja de poder usarse en movimientos nuevos, pero sigue existiendo\
+        \ para lo ya categorizado (no se puede borrar una categoría en uso)."
+      operationId: categoryArchive
+      parameters:
+      - description: Id de la categoría.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CategoryResponse"
+          description: OK
+      summary: Archivar una categoría
+      tags:
+      - Categorías
+  /api/v1/credit-cards:
+    get:
+      operationId: creditCardList
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CreditCardResponse"
+          description: OK
+      summary: Listar tarjetas de crédito
+      tags:
+      - Tarjetas de crédito
+    post:
+      description: También crea la Account subyacente (tipo CREDIT_CARD) con saldo
+        inicial 0.
+      operationId: creditCardCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCreditCardRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CreditCardResponse"
+          description: Tarjeta creada.
+      summary: Crear una tarjeta de crédito
+      tags:
+      - Tarjetas de crédito
+  /api/v1/credit-cards/{cardId}/installment-plans:
+    get:
+      description: "Incluye planes ACTIVE, COMPLETED y CANCELLED."
+      operationId: installmentPlanListForCard
+      parameters:
+      - description: Id de la tarjeta.
+        in: path
+        name: cardId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/InstallmentPlanResponse"
+          description: OK
+      summary: Listar los planes de una tarjeta
+      tags:
+      - Planes MSI/MCI
+    post:
+      description: "Registra la compra por su monto total (original + interés si es\
+        \ MCI) como una única compra de tarjeta, y genera el calendario de cuotas\
+        \ mensuales a partir de la próxima fecha límite de pago de la tarjeta."
+      operationId: installmentPlanCreate
+      parameters:
+      - description: Id de la tarjeta.
+        in: path
+        name: cardId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateInstallmentPlanRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InstallmentPlanResponse"
+          description: Plan creado.
+      summary: Comprar a MSI/MCI
+      tags:
+      - Planes MSI/MCI
+  /api/v1/credit-cards/{id}:
+    get:
+      description: "Incluye deuda actual, crédito disponible y próxima fecha de corte/pago,\
+        \ ya calculadas para hoy."
+      operationId: creditCardGet
+      parameters:
+      - description: Id de la tarjeta.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CreditCardResponse"
+          description: OK
+      summary: Consultar una tarjeta
+      tags:
+      - Tarjetas de crédito
+    put:
+      description: "No cambia los planes MSI/MCI ya generados: sus cuotas quedan con\
+        \ las fechas calculadas al momento de la compra."
+      operationId: creditCardUpdate
+      parameters:
+      - description: Id de la tarjeta.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCreditCardRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CreditCardResponse"
+          description: OK
+      summary: "Editar nombre, banco, límite y días de corte/pago"
+      tags:
+      - Tarjetas de crédito
+  /api/v1/credit-cards/{id}/payments:
+    post:
+      description: Transferencia (dos filas ligadas) desde otra cuenta del usuario
+        — no AFORE/PPR ni otra tarjeta de crédito. También marca como pagadas las
+        cuotas MSI/MCI pendientes del ciclo que este pago cubre (ver InstallmentPlanService.markDueInstallmentsAsPaidByPayment).
+      operationId: creditCardPay
+      parameters:
+      - description: Id de la tarjeta.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditCardPaymentRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TransferResponse"
+          description: Pago registrado.
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: "La cuenta origen es otra tarjeta de crédito, o una cuenta\
+            \ AFORE/PPR."
+      summary: Pagar la tarjeta
+      tags:
+      - Tarjetas de crédito
+  /api/v1/credit-cards/{id}/purchases:
+    post:
+      description: "Compra \"de contado\" (sin MSI/MCI, eso es POST /credit-cards/{id}/installment-plans).\
+        \ Aumenta la deuda por el monto completo."
+      operationId: creditCardPurchase
+      parameters:
+      - description: Id de la tarjeta.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreditCardPurchaseRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+          description: Compra registrada.
+      summary: Registrar una compra de contado
+      tags:
+      - Tarjetas de crédito
+  /api/v1/credit-cards/{id}/purchases/{transactionId}:
+    put:
+      description: "Reajusta la deuda de la tarjeta por la diferencia. Rechazada si\
+        \ la compra pertenece a un plan MSI/MCI — esas se editan desde PUT /installment-plans/{id}."
+      operationId: creditCardUpdatePurchase
+      parameters:
+      - description: Id de la tarjeta.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - description: Id del movimiento de la compra.
+        in: path
+        name: transactionId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCreditCardPurchaseRequest"
+        required: true
+      responses:
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: La compra pertenece a un plan MSI/MCI.
+      summary: Editar una compra de contado
+      tags:
+      - Tarjetas de crédito
+  /api/v1/dashboard:
+    get:
+      description: "Disponible/patrimonio/deuda ya vienen convertidos a MXN si hay\
+        \ cuentas en otra moneda. netWorthEvolution/expenseEvolution son siempre los\
+        \ últimos 6 meses, independiente de month."
+      operationId: dashboardGet
+      parameters:
+      - description: "Mes (yyyy-MM) para las métricas mensuales (ingresos/gastos/categorí\
+          as). Por defecto, el mes actual."
+        in: query
+        name: month
+        required: false
+        schema:
+          type: string
+      - description: Cuántos movimientos recientes traer (1-50).
+        in: query
+        name: recentTransactionsLimit
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 10
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/DashboardResponse"
+          description: OK
+      summary: Obtener el dashboard
+      tags:
+      - Dashboard
+  /api/v1/installment-plans/{id}:
+    get:
+      description: Incluye el calendario completo de cuotas (pagadas y pendientes).
+      operationId: installmentPlanGet
+      parameters:
+      - description: Id del plan.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/InstallmentPlanResponse"
+          description: OK
+      summary: Consultar un plan
+      tags:
+      - Planes MSI/MCI
+    put:
+      description: "Sin cuotas pagadas: recalcula el total y regenera todas las cuotas\
+        \ si cambia monto/plazo/tasa. Con alguna cuota ya pagada: monto, plazo e interé\
+        s quedan bloqueados (rompería lo ya cobrado) — solo se puede editar comercio,\
+        \ categoría, descripción y referencia."
+      operationId: installmentPlanUpdate
+      parameters:
+      - description: Id del plan.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateInstallmentPlanRequest"
+        required: true
+      responses:
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Se intentó cambiar monto/plazo/interés con alguna cuota ya
+            pagada.
+      summary: Editar un plan
+      tags:
+      - Planes MSI/MCI
+  /api/v1/installment-plans/{id}/installments/{installmentId}/pay:
+    post:
+      description: "Solo seguimiento/reporte — no vuelve a mover el saldo de la tarjeta\
+        \ (eso ya ocurrió con la compra original, y ocurre de nuevo con cada pago\
+        \ real vía POST /credit-cards/{id}/payments, que además marca automáticamente\
+        \ la cuota del ciclo que cubre)."
+      operationId: installmentPlanPayInstallment
+      parameters:
+      - description: Id del plan.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - description: Id de la cuota.
+        in: path
+        name: installmentId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: La cuota ya estaba marcada como pagada.
+      summary: Marcar una cuota como pagada
+      tags:
+      - Planes MSI/MCI
+  /api/v1/notifications:
+    get:
+      description: Genera al vuelo lo que falte para el usuario y devuelve la lista
+        actualizada.
+      operationId: notificationList
+      parameters:
+      - description: "Si es true, solo trae las no leídas."
+        in: query
+        name: unreadOnly
+        required: false
+        schema:
+          type: boolean
+          default: false
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/NotificationResponse"
+          description: OK
+      summary: Listar notificaciones
+      tags:
+      - Notificaciones
+  /api/v1/notifications/read-all:
+    post:
+      operationId: notificationMarkAllAsRead
+      responses:
+        "200":
+          description: OK
+      summary: Marcar todas las notificaciones como leídas
+      tags:
+      - Notificaciones
+  /api/v1/notifications/{id}/read:
+    post:
+      operationId: notificationMarkAsRead
+      parameters:
+      - description: Id de la notificación.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/NotificationResponse"
+          description: OK
+      summary: Marcar una notificación como leída
+      tags:
+      - Notificaciones
+  /api/v1/reports:
+    get:
+      description: "A diferencia de /dashboard (mes actual), from/to son un rango\
+        \ de fechas arbitrario elegido por el usuario."
+      operationId: reportGet
+      parameters:
+      - description: "Fecha inicial, inclusiva."
+        in: query
+        name: from
+        required: true
+        schema:
+          type: string
+          format: date
+      - description: "Fecha final, inclusiva."
+        in: query
+        name: to
+        required: true
+        schema:
+          type: string
+          format: date
+      - description: Acota el reporte a una sola cuenta.
+        in: query
+        name: accountId
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - description: "Acota el reporte a un solo tipo de movimiento (INCOME, EXPENSE,\
+          \ etc.)."
+        in: query
+        name: type
+        required: false
+        schema:
+          type: string
+          enum:
+          - INCOME
+          - EXPENSE
+          - TRANSFER
+          - CREDIT_CARD_PURCHASE
+          - CREDIT_CARD_PAYMENT
+          - REFUND
+          - ADJUSTMENT
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ReportResponse"
+          description: OK
+      summary: Generar un reporte
+      tags:
+      - Reportes
+  /api/v1/sat/certificate:
+    delete:
+      description: Borra el material sensible de forma permanente. No borra las facturas
+        ya descargadas.
+      operationId: satDisconnect
+      responses:
+        "200":
+          description: OK
+      summary: Desconectar la e.firma
+      tags:
+      - SAT
+    get:
+      operationId: satGetCertificate
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SatCertificateResponse"
+          description: OK
+      summary: "Consultar el estado de la conexión SAT (RFC, vigencia, última sincronizació\
+        n)"
+      tags:
+      - SAT
+    post:
+      description: Sube .cer + .key + contraseña. Valida el certificado y hace un
+        login de prueba contra el SAT antes de guardar nada cifrado. Dispara la primera
+        sincronización en background.
+      operationId: satConnect
+      parameters:
+      - in: query
+        name: password
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                cer:
+                  type: string
+                  format: binary
+                key:
+                  type: string
+                  format: binary
+              required:
+              - cer
+              - key
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SatCertificateResponse"
+          description: OK
+      summary: Conectar (o reemplazar) la e.firma
+      tags:
+      - SAT
+  /api/v1/sat/contrapartes:
+    get:
+      description: El SAT exige el RFC del emisor específico para descargar RECIBIDAS
+        (B12) — cada sync trae recibidas de cada uno de estos RFC.
+      operationId: satListContrapartes
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SatContraparteResponse"
+          description: OK
+      summary: Listar los RFC de contraparte registrados
+      tags:
+      - SAT
+    post:
+      operationId: satCreateContraparte
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSatContraparteRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/SatContraparteResponse"
+          description: OK
+      summary: Registrar un RFC de contraparte
+      tags:
+      - SAT
+  /api/v1/sat/contrapartes/{id}:
+    delete:
+      description: "No borra las facturas ya descargadas de ese RFC, solo deja de\
+        \ sincronizarlo."
+      operationId: satDeleteContraparte
+      parameters:
+      - description: Id del RFC de contraparte.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          description: OK
+      summary: Eliminar un RFC de contraparte
+      tags:
+      - SAT
+  /api/v1/sat/invoices:
+    get:
+      description: "Todos los filtros son opcionales. `texto` busca por RFC, nombre\
+        \ de emisor/receptor y folio fiscal (UUID)."
+      operationId: satListInvoices
+      parameters:
+      - description: EMITIDAS o RECIBIDAS.
+        in: query
+        name: tipo
+        required: false
+        schema:
+          type: string
+          enum:
+          - EMITIDAS
+          - RECIBIDAS
+      - in: query
+        name: desde
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: hasta
+        required: false
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: texto
+        required: false
+        schema:
+          type: string
+      - in: query
+        name: page
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 0
+      - in: query
+        name: size
+        required: false
+        schema:
+          type: integer
+          format: int32
+          default: 25
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/PageCfdiInvoiceResponse"
+          description: OK
+      summary: Listar facturas
+      tags:
+      - SAT
+  /api/v1/sat/invoices/recalcular-iva:
+    post:
+      description: "Corrige en BD el bug de B13 (CfdiParser sumaba el IVA de cada\
+        \ concepto además del ya agregado a nivel comprobante, duplicándolo) — no\
+        \ vuelve a pedir nada al SAT, solo re-lee el XML que cada factura ya tiene\
+        \ guardado."
+      operationId: satRecalcularIva
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/RecalcularIvaResponse"
+          description: OK
+      summary: Recalcular el IVA de las facturas ya sincronizadas
+      tags:
+      - SAT
+  /api/v1/sat/invoices/{id}/pdf:
+    get:
+      description: "Se genera al vuelo a partir del XML ya guardado — no es el documento\
+        \ fiscal en sí (eso es el XML), es la versión legible que normalmente se comparte/imprime."
+      operationId: satDownloadPdf
+      parameters:
+      - description: Id de la factura (no el UUID fiscal).
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+          description: OK
+      summary: Descargar la representación impresa (PDF) de una factura
+      tags:
+      - SAT
+  /api/v1/sat/invoices/{id}/xml:
+    get:
+      operationId: satDownloadXml
+      parameters:
+      - description: Id de la factura (no el UUID fiscal).
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: byte
+          description: OK
+      summary: Descargar el XML crudo de una factura
+      tags:
+      - SAT
+  /api/v1/sat/sync:
+    post:
+      description: "Sin body (o body vacío): trae lo nuevo desde la última sync. Con\
+        \ `desde`/`hasta`: trae ese rango explícito, sin importar la última sync (plan,\
+        \ sección 6.1 — para buscar facturas antiguas)."
+      operationId: satSync
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SyncRequest"
+      responses:
+        "200":
+          description: OK
+      summary: Forzar una sincronización
+      tags:
+      - SAT
+  /api/v1/scheduled-charges:
+    get:
+      description: "Activos y pausados primero (por próximo cargo), luego terminados\
+        \ y cancelados."
+      operationId: scheduledChargeList
+      parameters:
+      - description: Solo los de esta cuenta.
+        in: query
+        name: accountId
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduledChargeResponse"
+          description: OK
+      summary: Listar cargos programados
+      tags:
+      - Cargos programados
+    post:
+      description: "Si la fecha de inicio es pasada, registra de inmediato los cargos\
+        \ atrasados hasta hoy."
+      operationId: scheduledChargeCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledChargeRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScheduledChargeResponse"
+          description: Cargo programado creado.
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: "Cuenta AFORE/PPR o inactiva, categoría no válida, o reglas\
+            \ de fecha inconsistentes."
+      summary: Crear un cargo programado
+      tags:
+      - Cargos programados
+  /api/v1/scheduled-charges/{id}:
+    delete:
+      description: "Baja lógica: deja de generar movimientos, pero los ya registrados\
+        \ se conservan."
+      operationId: scheduledChargeCancel
+      parameters:
+      - description: Id del cargo programado.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: Cancelado.
+      summary: Cancelar un cargo programado
+      tags:
+      - Cargos programados
+    get:
+      operationId: scheduledChargeGet
+      parameters:
+      - description: Id del cargo programado.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScheduledChargeResponse"
+          description: OK
+      summary: Consultar un cargo programado
+      tags:
+      - Cargos programados
+    put:
+      description: "Solo aplica hacia adelante: los movimientos ya generados no cambian.\
+        \ La fecha de inicio no se puede cambiar si el cargo ya generó movimientos."
+      operationId: scheduledChargeUpdate
+      parameters:
+      - description: Id del cargo programado.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduledChargeRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScheduledChargeResponse"
+          description: OK
+      summary: Editar un cargo programado
+      tags:
+      - Cargos programados
+  /api/v1/scheduled-charges/{id}/pause:
+    post:
+      operationId: scheduledChargePause
+      parameters:
+      - description: Id del cargo programado.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScheduledChargeResponse"
+          description: OK
+      summary: Pausar un cargo programado
+      tags:
+      - Cargos programados
+  /api/v1/scheduled-charges/{id}/resume:
+    post:
+      description: "Sigue desde hoy: lo que habría tocado mientras estuvo pausado\
+        \ no se registra."
+      operationId: scheduledChargeResume
+      parameters:
+      - description: Id del cargo programado.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ScheduledChargeResponse"
+          description: OK
+      summary: Reanudar un cargo programado
+      tags:
+      - Cargos programados
+  /api/v1/transactions:
+    get:
+      description: "Sin accountId, lista los movimientos de todas las cuentas del\
+        \ usuario juntos, más recientes primero."
+      operationId: transactionList
+      parameters:
+      - description: Filtra a una sola cuenta; sin este parámetro trae todas.
+        in: query
+        name: accountId
+        required: false
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TransactionResponse"
+          description: OK
+      summary: Listar movimientos
+      tags:
+      - Movimientos
+    post:
+      description: "Solo INCOME/EXPENSE — para transferencias usa POST /api/v1/transfers,\
+        \ y para compras/pagos de tarjeta, /api/v1/credit-cards."
+      operationId: transactionCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransactionRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TransactionResponse"
+          description: Movimiento registrado.
+      summary: Registrar un ingreso o gasto
+      tags:
+      - Movimientos
+  /api/v1/transactions/{id}:
+    delete:
+      description: "INCOME/EXPENSE revierte el saldo de su cuenta; TRANSFER borra\
+        \ las dos piernas y revierte ambos saldos; CREDIT_CARD_PURCHASE revierte la\
+        \ deuda de la tarjeta (rechazada si pertenece a un plan MSI/MCI — bórrala\
+        \ desde el plan). CREDIT_CARD_PAYMENT no se puede borrar: revertirlo implicarí\
+        a des-marcar cuotas MSI/MCI que ese pago haya marcado como pagadas, sin historial\
+        \ suficiente para saber cuáles."
+      operationId: transactionDelete
+      parameters:
+      - description: Id del movimiento.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: Movimiento borrado.
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: "El movimiento es un pago de tarjeta, o una compra ligada a\
+            \ un plan MSI/MCI."
+      summary: Borrar un movimiento
+      tags:
+      - Movimientos
+    put:
+      description: "Solo INCOME/EXPENSE — transferencias y compras/pagos de tarjeta\
+        \ tienen sus propios flujos de edición (no comparten este endpoint porque\
+        \ afectan más de una cuenta, o tienen reglas propias de MSI/MCI)."
+      operationId: transactionUpdate
+      parameters:
+      - description: Id del movimiento.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTransactionRequest"
+        required: true
+      responses:
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: El movimiento no es INCOME/EXPENSE.
+      summary: Editar un ingreso o gasto
+      tags:
+      - Movimientos
+  /api/v1/transfers:
+    post:
+      description: "Crea dos movimientos ligados (uno por cuenta, tipo TRANSFER) —\
+        \ nunca se contabiliza como ingreso + gasto."
+      operationId: transferCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateTransferRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/TransferResponse"
+          description: Transferencia registrada.
+      summary: Registrar una transferencia
+      tags:
+      - Transferencias
+  /api/v1/users:
+    post:
+      description: Crea la cuenta con email/contraseña. Es el único endpoint de este
+        módulo público (ver SecurityConfig) — no requiere Authorization. Usa POST
+        /api/v1/auth/login después para obtener el access token.
+      operationId: userRegister
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterUserRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+          description: Usuario creado.
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ya existe un usuario con ese email.
+      security: []
+      summary: Registrar un nuevo usuario
+      tags:
+      - Usuarios
+  /api/v1/users/me:
+    get:
+      description: Datos del usuario dueño del access token.
+      operationId: userMe
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+          description: OK
+      summary: Perfil del usuario autenticado
+      tags:
+      - Usuarios
+components:
+  schemas:
+    AccountResponse:
+      type: object
+      properties:
+        balance:
+          type: number
+          description: "Convención de signo: positivo es saldo a favor; en una tarjeta\
+            \ de crédito, negativo es deuda (ver CreditCardView.currentDebt)."
+        createdAt:
+          type: string
+          format: date-time
+        currency:
+          type: string
+        id:
+          type: string
+          format: uuid
+        includeInAvailableBalance:
+          type: boolean
+        includeInNetWorth:
+          type: boolean
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - ARCHIVED
+        type:
+          type: string
+          enum:
+          - DEBIT
+          - SAVINGS
+          - CREDIT_CARD
+          - AFORE
+          - PPR
+        updatedAt:
+          type: string
+          format: date-time
+    ApiError:
+      type: object
+      properties:
+        error:
+          type: string
+        fieldErrors:
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldError"
+        message:
+          type:
+          - string
+          - "null"
+        path:
+          type: string
+        status:
+          type: integer
+          format: int32
+        timestamp:
+          type: string
+          format: date-time
+    AuditLogResponse:
+      type: object
+      description: "Un evento financiero registrado (plan.md, sección 13 \"Auditorí\
+        a\") — solo lectura, nunca se edita ni se borra."
+      properties:
+        entityId:
+          type: string
+          format: uuid
+          description: Id de la entidad afectada — puede ya no existir (p.ej. TRANSACTION_DELETED
+            apunta a una Transaction ya borrada).
+        entityType:
+          type: string
+          description: "Nombre simple de la clase de la entidad afectada, p.ej. \"\
+            Transaction\" o \"InstallmentPlan\"."
+        eventType:
+          type: string
+          enum:
+          - TRANSACTION_CREATED
+          - TRANSACTION_UPDATED
+          - TRANSACTION_DELETED
+          - CREDIT_CARD_PURCHASE_CREATED
+          - INSTALLMENT_PLAN_CREATED
+          - PAYMENT_CREATED
+          - SAT_CERTIFICATE_CONNECTED
+          - SAT_CERTIFICATE_REVOKED
+          - SCHEDULED_CHARGE_CREATED
+          - SCHEDULED_CHARGE_UPDATED
+          - SCHEDULED_CHARGE_CANCELLED
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        summary:
+          type: string
+          description: "Descripción legible del evento, lista para mostrar sin tener\
+            \ que reconstruirla."
+    BalanceSummaryResponse:
+      type: object
+      description: Ambos valores ya vienen convertidos a MXN (moneda base) cuando
+        alguna cuenta está en otra moneda.
+      properties:
+        availableBalance:
+          type: number
+        netWorth:
+          type: number
+    CategoryAmountResponse:
+      type: object
+      properties:
+        amount:
+          type: number
+        categoryId:
+          type: string
+          format: uuid
+        categoryName:
+          type: string
+    CategoryResponse:
+      type: object
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - ARCHIVED
+        type:
+          type: string
+          enum:
+          - INCOME
+          - EXPENSE
+    CfdiInvoiceResponse:
+      type: object
+      properties:
+        estadoSat:
+          type: string
+          enum:
+          - VIGENTE
+          - CANCELADO
+        fechaEmision:
+          type: string
+          format: date-time
+        formaPago:
+          type:
+          - string
+          - "null"
+        id:
+          type: string
+          format: uuid
+        iva:
+          type: number
+        metodoPago:
+          type:
+          - string
+          - "null"
+        moneda:
+          type: string
+        nombreEmisor:
+          type:
+          - string
+          - "null"
+        nombreReceptor:
+          type:
+          - string
+          - "null"
+        rfcEmisor:
+          type: string
+        rfcReceptor:
+          type: string
+        subtotal:
+          type: number
+        tipo:
+          type: string
+          enum:
+          - EMITIDAS
+          - RECIBIDAS
+        total:
+          type: number
+        usoCfdi:
+          type:
+          - string
+          - "null"
+        uuidFiscal:
+          type: string
+    CreateAccountRequest:
+      type: object
+      properties:
+        currency:
+          type: string
+          example: MXN
+          minLength: 1
+          pattern: "^[A-Z]{3}$"
+        includeInAvailableBalance:
+          type: boolean
+          description: Si se suma al "disponible" agregado (GET /accounts/summary
+            y el dashboard).
+        includeInNetWorth:
+          type: boolean
+          description: Si se suma al "patrimonio neto" agregado.
+        name:
+          type: string
+          minLength: 1
+        openingBalance:
+          type: number
+          description: "Saldo con el que arranca la cuenta; no puede ser negativo\
+            \ (a diferencia del saldo de una tarjeta de crédito, que sí puede serlo)."
+          minimum: 0.0
+        type:
+          type: string
+          description: "Usa CREDIT_CARD solo vía POST /api/v1/credit-cards, no aquí\
+            \ — ahí se crea junto con los datos propios de la tarjeta (límite, corte,\
+            \ pago)."
+          enum:
+          - DEBIT
+          - SAVINGS
+          - CREDIT_CARD
+          - AFORE
+          - PPR
+      required:
+      - currency
+      - name
+      - type
+    CreateCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          description: INCOME o EXPENSE — solo se puede usar en movimientos del mismo
+            tipo.
+          enum:
+          - INCOME
+          - EXPENSE
+      required:
+      - name
+      - type
+    CreateCreditCardRequest:
+      type: object
+      properties:
+        bank:
+          type: string
+          minLength: 1
+        closingDay:
+          type: integer
+          format: int32
+          description: Día del mes (1-28) en que cierra el ciclo de facturación.
+          maximum: 28
+          minimum: 1
+        creditLimit:
+          type: number
+          minimum: 0.0
+        currency:
+          type: string
+          minLength: 1
+          pattern: "^[A-Z]{3}$"
+        last4:
+          type: string
+          minLength: 1
+          pattern: "^[0-9]{4}$"
+        name:
+          type: string
+          minLength: 1
+        paymentDueDay:
+          type: integer
+          format: int32
+          description: "Día del mes (1-28) límite para pagar sin recargos, del ciclo\
+            \ que ya cerró."
+          maximum: 28
+          minimum: 1
+      required:
+      - bank
+      - closingDay
+      - creditLimit
+      - currency
+      - last4
+      - name
+      - paymentDueDay
+    CreateInstallmentPlanRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        installmentCount:
+          type: integer
+          format: int32
+          maximum: 60
+          minimum: 2
+        interestRate:
+          type: number
+          description: "Tasa simple mensual, en porcentaje (ej. 2.5 = 2.5%/mes). 0\
+            \ = MSI, mayor a 0 = MCI."
+          example: 0
+          minimum: 0.0
+        merchant:
+          type: string
+          minLength: 1
+        reference:
+          type:
+          - string
+          - "null"
+      required:
+      - amount
+      - date
+      - installmentCount
+      - merchant
+    CreateSatContraparteRequest:
+      type: object
+      description: "RFC de una contraparte (empleador, proveedor de servicios, etc.)\
+        \ a registrar para poder sincronizar tus CFDI RECIBIDAS de ese RFC — el SAT\
+        \ exige el RFC del emisor específico en cada solicitud de recibidas."
+      properties:
+        alias:
+          type:
+          - string
+          - "null"
+        rfc:
+          type: string
+          minLength: 1
+      required:
+      - rfc
+    CreateTransactionRequest:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        reference:
+          type:
+          - string
+          - "null"
+        type:
+          type: string
+          enum:
+          - INCOME
+          - EXPENSE
+          - TRANSFER
+          - CREDIT_CARD_PURCHASE
+          - CREDIT_CARD_PAYMENT
+          - REFUND
+          - ADJUSTMENT
+      required:
+      - accountId
+      - amount
+      - date
+      - type
+    CreateTransferRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          minimum: 0.0
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        fromAccountId:
+          type: string
+          format: uuid
+        reference:
+          type:
+          - string
+          - "null"
+        toAccountId:
+          type: string
+          format: uuid
+      required:
+      - amount
+      - date
+      - fromAccountId
+      - toAccountId
+    CreditCardPaymentRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          minimum: 0.0
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        fromAccountId:
+          type: string
+          format: uuid
+          description: Cuenta de la que sale el dinero — no puede ser otra tarjeta
+            de crédito ni una cuenta AFORE/PPR.
+        reference:
+          type:
+          - string
+          - "null"
+      required:
+      - amount
+      - date
+      - fromAccountId
+    CreditCardPurchaseRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        merchant:
+          type: string
+          minLength: 1
+        reference:
+          type:
+          - string
+          - "null"
+      required:
+      - amount
+      - date
+      - merchant
+    CreditCardResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        availableCredit:
+          type: number
+        bank:
+          type: string
+        closingDay:
+          type: integer
+          format: int32
+        creditLimit:
+          type: number
+        currency:
+          type: string
+        currentDebt:
+          type: number
+          description: "Deuda total actual (>= 0) — incluye compras a MSI/MCI por\
+            \ su monto completo desde el día 1, no solo lo ya vencido."
+        id:
+          type: string
+          format: uuid
+        last4:
+          type: string
+        name:
+          type: string
+        nextClosingDate:
+          type: string
+          format: date
+          description: "Próxima fecha de corte, calculada para hoy."
+        nextPaymentDueDate:
+          type: string
+          format: date
+          description: "Fecha límite del pago que toca a continuación, calculada para\
+            \ hoy. Si hoy cae en el período de gracia de un ciclo ya cerrado y con\
+            \ saldo pendiente, es la fecha de ese ciclo (no la del corte siguiente)."
+        paymentDueDay:
+          type: integer
+          format: int32
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - ARCHIVED
+    DashboardResponse:
+      type: object
+      properties:
+        activeMsiPlansCount:
+          type: integer
+          format: int32
+        availableBalance:
+          type: number
+          description: "Suma de las cuentas con includeInAvailableBalance=true, convertida\
+            \ a MXN."
+        availableCredit:
+          type: number
+        creditCardDebt:
+          type: number
+          description: "Suma de currentDebt de todas las tarjetas, convertida a MXN\
+            \ — deuda total, no lo que toca pagar este corte (ver upcomingPayments)."
+        expenseEvolution:
+          type: array
+          description: Gasto total de cada uno de los últimos 6 meses.
+          items:
+            $ref: "#/components/schemas/MonthlyPointResponse"
+        expenseThisMonth:
+          type: number
+        expensesByCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryAmountResponse"
+        incomeByCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryAmountResponse"
+        incomeThisMonth:
+          type: number
+        month:
+          type: string
+          description: "Mes de las métricas mensuales, formato yyyy-MM."
+          example: 2026-09
+        monthlyBalance:
+          type: number
+        monthlyInstallmentCommitment:
+          type: number
+          description: Suma de installmentAmount de todos los planes MSI/MCI activos
+            del usuario (todas las tarjetas).
+        netWorth:
+          type: number
+          description: "Suma de las cuentas con includeInNetWorth=true, convertida\
+            \ a MXN."
+        netWorthEvolution:
+          type: array
+          description: Patrimonio neto al cierre de cada uno de los últimos 6 meses.
+          items:
+            $ref: "#/components/schemas/MonthlyPointResponse"
+        recentTransactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransactionResponse"
+        upcomingPayments:
+          type: array
+          description: "Una entrada por tarjeta con deuda > 0, ordenadas por dueDate."
+          items:
+            $ref: "#/components/schemas/UpcomingCardPaymentResponse"
+    FieldError:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type:
+          - string
+          - "null"
+    ForgotPasswordRequest:
+      type: object
+      description: "B10: pide un código de un solo uso (6 dígitos) por email para\
+        \ restablecer la contraseña. La respuesta es siempre la misma exista o no\
+        \ una cuenta con ese email — ver AuthController."
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+      required:
+      - email
+    InstallmentPlanResponse:
+      type: object
+      properties:
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        creditCardId:
+          type: string
+          format: uuid
+        description:
+          type:
+          - string
+          - "null"
+        endDate:
+          type: string
+          format: date
+        financedBalance:
+          type: number
+          description: Suma de las cuotas pendientes — la parte de totalAmount que
+            aún no toca pagar en el corte actual.
+        id:
+          type: string
+          format: uuid
+        installmentAmount:
+          type: number
+        installmentCount:
+          type: integer
+          format: int32
+        installments:
+          type: array
+          items:
+            $ref: "#/components/schemas/InstallmentResponse"
+        installmentsPaid:
+          type: integer
+          format: int32
+        installmentsPending:
+          type: integer
+          format: int32
+        interestAmount:
+          type: number
+        interestRate:
+          type: number
+        merchant:
+          type:
+          - string
+          - "null"
+        nextInstallment:
+          oneOf:
+          - $ref: "#/components/schemas/InstallmentResponse"
+          - type: "null"
+        originalAmount:
+          type: number
+        planType:
+          type: string
+          enum:
+          - MSI
+          - MCI
+        reference:
+          type:
+          - string
+          - "null"
+        startDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - COMPLETED
+          - CANCELLED
+        totalAmount:
+          type: number
+        transactionId:
+          type: string
+          format: uuid
+    InstallmentResponse:
+      type: object
+      properties:
+        amount:
+          type: number
+        dueDate:
+          type: string
+          format: date
+        id:
+          type: string
+          format: uuid
+        number:
+          type: integer
+          format: int32
+        paidAt:
+          type:
+          - string
+          - "null"
+          format: date-time
+        status:
+          type: string
+          enum:
+          - PENDING
+          - PAID
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        password:
+          type: string
+          minLength: 1
+      required:
+      - email
+      - password
+    MonthlyPointResponse:
+      type: object
+      description: Un punto en una serie de tiempo mensual (últimos 6 meses).
+      properties:
+        amount:
+          type: number
+        month:
+          type: string
+          description: Formato yyyy-MM.
+          example: 2026-09
+    NotificationResponse:
+      type: object
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        id:
+          type: string
+          format: uuid
+        message:
+          type: string
+        readAt:
+          type:
+          - string
+          - "null"
+          format: date-time
+        relatedEntityId:
+          type:
+          - string
+          - "null"
+          format: uuid
+          description: "Id de la tarjeta o cuota a la que se refiere el aviso (segú\
+            n type), para poder navegar a su detalle."
+        status:
+          type: string
+          enum:
+          - UNREAD
+          - READ
+        title:
+          type: string
+        type:
+          type: string
+          enum:
+          - PAYMENT_DUE
+          - PAYMENT_DUE_SOON
+          - PAYMENT_OVERDUE
+          - INSTALLMENT_DUE
+          - BUDGET_EXCEEDED
+          - UNUSUAL_EXPENSE
+          - SAT_SYNC_COMPLETED
+          - SAT_SYNC_FAILED
+          - SCHEDULED_CHARGE_POSTED
+          - SCHEDULED_CHARGE_FAILED
+    PageCfdiInvoiceResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: "#/components/schemas/CfdiInvoiceResponse"
+        empty:
+          type: boolean
+        first:
+          type: boolean
+        last:
+          type: boolean
+        number:
+          type: integer
+          format: int32
+        numberOfElements:
+          type: integer
+          format: int32
+        pageable:
+          $ref: "#/components/schemas/PageableObject"
+        size:
+          type: integer
+          format: int32
+        sort:
+          $ref: "#/components/schemas/SortObject"
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    PageableObject:
+      type: object
+      properties:
+        offset:
+          type: integer
+          format: int64
+        pageNumber:
+          type: integer
+          format: int32
+        pageSize:
+          type: integer
+          format: int32
+        paged:
+          type: boolean
+        sort:
+          $ref: "#/components/schemas/SortObject"
+        unpaged:
+          type: boolean
+    RecalcularIvaResponse:
+      type: object
+      properties:
+        corregidas:
+          type: integer
+          format: int32
+    RefreshRequest:
+      type: object
+      description: También se usa para /logout — ahí solo importa refreshToken.
+      properties:
+        refreshToken:
+          type: string
+          minLength: 1
+      required:
+      - refreshToken
+    RegisterUserRequest:
+      type: object
+      description: Alta de un usuario nuevo.
+      properties:
+        displayName:
+          type: string
+          description: Nombre para mostrar en la UI (no es único).
+          example: Ana García
+          minLength: 1
+        email:
+          type: string
+          format: email
+          description: "Email único, usado como identificador para login."
+          example: ana@example.com
+          minLength: 1
+        password:
+          type: string
+          description: "Mínimo 8 caracteres. Se guarda hasheada (BCrypt), nunca en\
+            \ texto plano."
+          maxLength: 2147483647
+          minLength: 8
+      required:
+      - displayName
+      - email
+      - password
+    ReportResponse:
+      type: object
+      properties:
+        balance:
+          type: number
+        expensesByCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryAmountResponse"
+        from:
+          type: string
+          format: date
+        incomeByCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryAmountResponse"
+        monthlyExpense:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyPointResponse"
+        monthlyIncome:
+          type: array
+          items:
+            $ref: "#/components/schemas/MonthlyPointResponse"
+        to:
+          type: string
+          format: date
+        totalExpense:
+          type: number
+        totalIncome:
+          type: number
+        transactions:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransactionResponse"
+    ResetPasswordRequest:
+      type: object
+      description: "B10: completa la recuperación de contraseña con el código recibido\
+        \ por email."
+      properties:
+        code:
+          type: string
+          minLength: 1
+          pattern: "\\d{6}"
+        email:
+          type: string
+          format: email
+          minLength: 1
+        newPassword:
+          type: string
+          maxLength: 2147483647
+          minLength: 8
+      required:
+      - code
+      - email
+      - newPassword
+    SatCertificateResponse:
+      type: object
+      properties:
+        lastSyncAt:
+          type:
+          - string
+          - "null"
+          format: date-time
+        rfc:
+          type: string
+        status:
+          type: string
+          enum:
+          - ACTIVO
+          - ERROR_AUTENTICACION
+          - REVOCADO
+        validUntil:
+          type: string
+          format: date-time
+    SatContraparteResponse:
+      type: object
+      properties:
+        alias:
+          type:
+          - string
+          - "null"
+        id:
+          type: string
+          format: uuid
+        rfc:
+          type: string
+    ScheduledChargeRequest:
+      type: object
+      description: Alta y edición usan el mismo cuerpo. La edición solo aplica hacia
+        adelante.
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        dayOfMonth:
+          type: integer
+          format: int32
+          description: "Si el mes no tiene ese día, el cargo cae en el último día\
+            \ del mes."
+          maximum: 31
+          minimum: 1
+        description:
+          type:
+          - string
+          - "null"
+          maxLength: 500
+          minLength: 0
+        endDate:
+          type:
+          - string
+          - "null"
+          format: date
+          description: Inclusive. null = sin fecha de fin.
+        frequency:
+          type: string
+          enum:
+          - MONTHLY
+          - YEARLY
+        monthOfYear:
+          type:
+          - integer
+          - "null"
+          format: int32
+          description: Obligatorio si frequency = YEARLY; null si MONTHLY.
+          maximum: 12
+          minimum: 1
+        name:
+          type: string
+          maxLength: 120
+          minLength: 0
+        startDate:
+          type: string
+          format: date
+          description: "Si es pasada, al crear se registran de inmediato los cargos\
+            \ atrasados."
+      required:
+      - accountId
+      - amount
+      - dayOfMonth
+      - frequency
+      - name
+      - startDate
+    ScheduledChargeResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        accountName:
+          type: string
+        accountType:
+          type: string
+          enum:
+          - DEBIT
+          - SAVINGS
+          - CREDIT_CARD
+          - AFORE
+          - PPR
+        amount:
+          type: number
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        currency:
+          type: string
+        dayOfMonth:
+          type: integer
+          format: int32
+        description:
+          type:
+          - string
+          - "null"
+        endDate:
+          type:
+          - string
+          - "null"
+          format: date
+        frequency:
+          type: string
+          enum:
+          - MONTHLY
+          - YEARLY
+        id:
+          type: string
+          format: uuid
+        lastError:
+          type:
+          - string
+          - "null"
+          description: Por qué se pausó automáticamente (p. ej. categoría archivada).
+            Se limpia al reanudar.
+        lastRunDate:
+          type:
+          - string
+          - "null"
+          format: date
+        monthOfYear:
+          type:
+          - integer
+          - "null"
+          format: int32
+        name:
+          type: string
+        nextRunDate:
+          type:
+          - string
+          - "null"
+          format: date
+          description: Próximo cargo; null si está FINISHED o CANCELLED.
+        startDate:
+          type: string
+          format: date
+        status:
+          type: string
+          enum:
+          - ACTIVE
+          - PAUSED
+          - FINISHED
+          - CANCELLED
+    SortObject:
+      type: object
+      properties:
+        empty:
+          type: boolean
+        sorted:
+          type: boolean
+        unsorted:
+          type: boolean
+    SyncRequest:
+      type: object
+      description: "Sincronización manual por rango de fechas explícito (plan, secció\
+        n 6.1) — omitir ambos campos para una sync incremental normal (desde la ú\
+        ltima exitosa, o los últimos meses configurados si es la primera vez)."
+      properties:
+        desde:
+          type:
+          - string
+          - "null"
+          format: date-time
+        hasta:
+          type:
+          - string
+          - "null"
+          format: date-time
+    TokenResponse:
+      type: object
+      description: Par de tokens JWT. accessToken va en el header Authorization de
+        las siguientes peticiones; refreshToken se usa solo contra /auth/refresh o
+        /auth/logout.
+      properties:
+        accessToken:
+          type: string
+        expiresInSeconds:
+          type: integer
+          format: int64
+          description: "Vida útil del accessToken en segundos, no del refreshToken."
+        refreshToken:
+          type: string
+        tokenType:
+          type: string
+    TransactionResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+        balanceEffect:
+          type: number
+          description: "amount con signo: positivo si aumenta el saldo de accountId,\
+            \ negativo si lo disminuye. Distingue la pierna de salida de la de entrada\
+            \ en TRANSFER/CREDIT_CARD_PAYMENT (comparten el mismo type)."
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        counterAccountId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        id:
+          type: string
+          format: uuid
+        merchant:
+          type:
+          - string
+          - "null"
+        reference:
+          type:
+          - string
+          - "null"
+        scheduledChargeId:
+          type:
+          - string
+          - "null"
+          format: uuid
+          description: Cargo programado que generó este movimiento (B14); null si
+            se capturó a mano.
+        status:
+          type: string
+          enum:
+          - POSTED
+          - VOIDED
+        transferGroupId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        type:
+          type: string
+          enum:
+          - INCOME
+          - EXPENSE
+          - TRANSFER
+          - CREDIT_CARD_PURCHASE
+          - CREDIT_CARD_PAYMENT
+          - REFUND
+          - ADJUSTMENT
+    TransferResponse:
+      type: object
+      properties:
+        incoming:
+          $ref: "#/components/schemas/TransactionResponse"
+        outgoing:
+          $ref: "#/components/schemas/TransactionResponse"
+    UpcomingCardPaymentResponse:
+      type: object
+      description: "expectedPayment es solo lo que corresponde pagar en dueDate (compras\
+        \ normales sin pagar + la cuota del corte de los planes MSI/MCI), no la deuda\
+        \ total de la tarjeta."
+      properties:
+        creditCardId:
+          type: string
+          format: uuid
+        creditCardName:
+          type: string
+        dueDate:
+          type: string
+          format: date
+        expectedPayment:
+          type: number
+    UpdateAccountRequest:
+      type: object
+      description: "Tipo, moneda y saldo no son editables: cambiarlos rompería el\
+        \ significado del historial de movimientos ya registrados."
+      properties:
+        includeInAvailableBalance:
+          type: boolean
+        includeInNetWorth:
+          type: boolean
+        name:
+          type: string
+          minLength: 1
+      required:
+      - name
+    UpdateCategoryRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+      required:
+      - name
+    UpdateCreditCardPurchaseRequest:
+      type: object
+      description: Solo para compras de contado (sin plan) — se rechaza si la compra
+        pertenece a un plan MSI/MCI.
+      properties:
+        amount:
+          type: number
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        merchant:
+          type: string
+          minLength: 1
+        reference:
+          type:
+          - string
+          - "null"
+      required:
+      - amount
+      - date
+      - merchant
+    UpdateCreditCardRequest:
+      type: object
+      properties:
+        bank:
+          type: string
+          minLength: 1
+        closingDay:
+          type: integer
+          format: int32
+          description: Día del mes (1-28) en que cierra el ciclo de facturación.
+          maximum: 28
+          minimum: 1
+        creditLimit:
+          type: number
+          minimum: 0.0
+        name:
+          type: string
+          minLength: 1
+        paymentDueDay:
+          type: integer
+          format: int32
+          description: "Día del mes (1-28) límite para pagar sin recargos, del ciclo\
+            \ que ya cerró."
+          maximum: 28
+          minimum: 1
+      required:
+      - bank
+      - closingDay
+      - creditLimit
+      - name
+      - paymentDueDay
+    UpdateInstallmentPlanRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        installmentCount:
+          type: integer
+          format: int32
+          maximum: 60
+          minimum: 2
+        interestRate:
+          type: number
+          description: "Tasa simple mensual, en porcentaje. Bloqueada (junto con amount/installmentCount)\
+            \ si ya hay alguna cuota pagada."
+          minimum: 0.0
+        merchant:
+          type: string
+          minLength: 1
+        reference:
+          type:
+          - string
+          - "null"
+      required:
+      - amount
+      - date
+      - installmentCount
+      - merchant
+    UpdateTransactionRequest:
+      type: object
+      description: Solo INCOME/EXPENSE — ver TransactionController.
+      properties:
+        amount:
+          type: number
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+        date:
+          type: string
+          format: date
+        description:
+          type:
+          - string
+          - "null"
+        reference:
+          type:
+          - string
+          - "null"
+      required:
+      - amount
+      - date
+    UserResponse:
+      type: object
+      description: Datos públicos de un usuario.
+      properties:
+        createdAt:
+          type: string
+          format: date-time
+        displayName:
+          type: string
+        email:
+          type: string
+        id:
+          type: string
+          format: uuid
+  securitySchemes:
+    bearerAuth:
+      bearerFormat: JWT
+      description: Access token obtenido en POST /api/v1/auth/login (o /refresh).
+      scheme: bearer
+      type: http
