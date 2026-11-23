@@ -208,16 +208,16 @@ class B5DashboardTests {
 
     @Test
     fun `en el periodo de gracia, el proximo pago es del ciclo que ya cerro, no del que viene`() {
-        // Corte fijo el día 1: casi siempre "ayer o antes" salvo si la prueba corre el día 1
-        // mismo, así que el ciclo relevante es el que ya cerró (mientras no pase su propia
-        // fecha límite de pago) — no el que cerrará dentro de un mes.
-        val closingDay = 1
-        val paymentDueDay = 20
-        // El corte anterior al que viene: seguro con día fijo 1 (existe en todos los meses,
-        // sin necesidad del ajuste de fin de mes que hace BillingCycleCalculator internamente).
+        // Hoy tiene que caer dentro del período de gracia del ciclo anterior, sea cual sea el
+        // día en que corra la prueba. Con pago un día antes del corte (del mes siguiente), la
+        // gracia cubre todo el mes salvo el propio día de corte; por eso el corte se mueve al 27
+        // el único día en que hoy es 28. El 28 existe en todos los meses: sin ajuste de fin de mes.
+        val closingDay = if (today.dayOfMonth == 28) 27 else 28
+        val paymentDueDay = closingDay - 1
         val upcomingClosing = billingCycleCalculator.closingDateOnOrAfter(closingDay, today)
         val closingDate = YearMonth.from(upcomingClosing).minusMonths(1).atDay(closingDay)
         val paymentDueDate = billingCycleCalculator.paymentDueDateFor(closingDate, closingDay, paymentDueDay)
+        check(closingDate.isBefore(today) && !paymentDueDate.isBefore(today)) { "Hoy ($today) no cae en la gracia" }
         val auth = registerAndAuth("periododegracia")
         val cardId = createCreditCard(auth, closingDay, paymentDueDay)
 
