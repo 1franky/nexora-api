@@ -92,6 +92,23 @@ POST /api/v1/notifications/{id}/read
 POST /api/v1/notifications/read-all
 ```
 
+### Contrato OpenAPI
+
+[`openapi/openapi-v1.yaml`](./openapi/openapi-v1.yaml) es el contrato completo de `/api/v1`, versionado en el repo. Lo genera springdoc a partir del código (`/v3/api-docs.yaml`) y `OpenApiExportTests` falla en CI si el archivo no coincide con lo que expone la API. Los clientes que generan código (por ejemplo `watch-companion`) fijan la copia de un commit concreto en lugar de pedirla a la API en ejecución.
+
+Si cambias endpoints, DTOs o validaciones a propósito, en el mismo PR:
+
+1. Regenera el archivo:
+   ```bash
+   ./gradlew test --tests com.nexora.api.OpenApiExportTests -PupdateOpenApi
+   ```
+2. Sube `CONTRACT_VERSION` en `config/OpenApiConfig.kt` (semver):
+   - **parche** (`1.0.x`): solo cambian textos o ejemplos;
+   - **menor** (`1.x.0`): cambio aditivo y compatible (endpoint nuevo, campo opcional nuevo, valor de enum nuevo — avisa a los clientes que fallan con valores desconocidos);
+   - un cambio **incompatible** (quitar o renombrar, volver obligatorio) no entra en v1: va en `/api/v2` con su propio `openapi-v2.yaml`.
+
+El archivo no incluye `servers`: cada cliente configura su URL base.
+
 ## Seguridad
 
 Autenticación con JWT propio: esta misma API emite y valida sus tokens (no hay un Authorization Server externo como Keycloak/Auth0 — Web y Android son clientes propios, de primera parte).

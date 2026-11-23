@@ -75,6 +75,10 @@ allOpen {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+	// Contrato OpenAPI versionado (openapi/openapi-v1.yaml): OpenApiExportTests lo compara con el código y, con
+	// -PupdateOpenApi, lo regenera. El archivo es entrada de la prueba para que un cambio en él la vuelva a correr.
+	systemProperty("openapi.update", providers.gradleProperty("updateOpenApi").map { it != "false" }.orElse(false).get())
+	inputs.files(fileTree("openapi"))
 	// Igual que en producción, el secreto viene de una variable de entorno;
 	// este es un valor fijo solo para que los tests sean deterministas.
 	environment("JWT_SECRET", "test-only-secret-not-for-production-0123456789-0123456789")
