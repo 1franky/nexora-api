@@ -165,6 +165,7 @@ PAYMENT_DUE
 PAYMENT_DUE_SOON
 PAYMENT_OVERDUE
 INSTALLMENT_DUE
+BUDGET_NEAR_LIMIT
 BUDGET_EXCEEDED
 UNUSUAL_EXPENSE
 ```
@@ -455,7 +456,7 @@ La API debe diseñarse pensando en la futura sincronización offline de Android:
 ## 19. Funcionalidades posteriores al MVP
 
 ```text
-Presupuestos
+Presupuestos (hecho en B15, sección 22)
 Metas de ahorro
 Importación CSV
 Importación de estados de cuenta
@@ -498,3 +499,30 @@ Integraciones bancarias
 
 - `nexora-web` — aplicación web (consume esta API).
 - `nexora-android` — aplicación Android (consume esta API).
+
+---
+
+## 22. Presupuestos (B15)
+
+Diseño acordado el 2026-11-27 (WC-28 de watch-companion, que los necesita para avisar en el reloj).
+
+| Tema | Decisión |
+|---|---|
+| Alcance | Un tope **mensual** por **categoría de gasto** y, opcional, uno **general** para todo el gasto del mes. Uno por categoría y uno general por usuario. |
+| Avisos | `BUDGET_NEAR_LIMIT` al llegar al **80 %** y `BUDGET_EXCEEDED` al **pasarse** (> 100 %). Cada uno una vez por presupuesto y mes. |
+| Sobrante | **Se pierde**: cada mes empieza con el monto completo. |
+
+**Reglas:**
+
+1. **Qué es gasto:** lo mismo que el dashboard: `EXPENSE` y `CREDIT_CARD_PURCHASE` (la compra a MSI/MCI cuenta completa el día de la compra), sin movimientos anulados. Ingresos, transferencias y pagos de tarjeta no cuentan.
+2. **Moneda:** el monto está en MXN; el gasto en cuentas de otra moneda se convierte con el tipo de cambio vigente (`ExchangeRateService`).
+3. **Mes calendario** por la fecha del movimiento. El presupuesto general cuenta también el gasto sin categoría.
+4. **Estados:** `OK` (< 80 %), `NEAR_LIMIT` (80 % a 100 %, justo el monto incluido) y `EXCEEDED` (> 100 %).
+5. **Categoría:** al crear debe ser de gasto y activa. No se cambia después (se borra y se crea otro). Si se archiva, el presupuesto sigue contando y la respuesta lo marca (`categoryArchived`).
+6. **Editar** solo cambia el monto y aplica al mes en curso y siguientes; no hay historial de montos.
+7. **Borrar** es físico; las notificaciones ya generadas se conservan.
+8. **Notificaciones:** las genera `NotificationService` junto con las de pagos (al vuelo en `GET /notifications` y en el job diario). `forDate` = día 1 del mes, así el índice único de `notifications` evita duplicados. Si ya se avisó que se pasó, no se avisa después que está cerca (por ejemplo, al borrar un gasto).
+
+**API:** `POST/GET /api/v1/budgets`, `GET/PUT/DELETE /api/v1/budgets/{id}`; las lecturas aceptan `month=yyyy-MM` y devuelven `spent`, `remaining`, `percentUsed` y `status` de ese mes.
+
+**Fuera de alcance:** presupuestos semanales o anuales, acumular sobrante, historial de montos y umbral configurable.

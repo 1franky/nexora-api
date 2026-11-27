@@ -16,7 +16,8 @@ nexora-android    ──┘
 - Ingresos, egresos y transferencias entre cuentas.
 - Compras con tarjeta de crédito, incluyendo MSI y MCI.
 - Fechas de corte y fecha límite de pago por tarjeta.
-- Notificaciones de pagos.
+- Notificaciones de pagos y de presupuestos.
+- Presupuestos mensuales por categoría de gasto o generales.
 - Métricas y agregaciones para dashboards personalizables.
 - Saldo disponible y patrimonio neto como métricas independientes y configurables por cuenta.
 
@@ -87,6 +88,12 @@ GET  /api/v1/dashboard?month=yyyy-MM   patrimonio, disponible, ingresos/gastos d
                                         próximos pagos, compromiso mensual MSI/MCI, evolución
                                         de patrimonio/gastos (6 meses) y últimos movimientos
 
+POST   /api/v1/budgets                 presupuesto mensual por categoría de gasto o general (MXN)
+GET    /api/v1/budgets?month=yyyy-MM   con lo gastado, lo que queda, % y estado (OK / NEAR_LIMIT / EXCEEDED)
+GET    /api/v1/budgets/{id}?month=yyyy-MM
+PUT    /api/v1/budgets/{id}            cambia el monto
+DELETE /api/v1/budgets/{id}
+
 GET  /api/v1/notifications?unreadOnly=false   genera al vuelo lo que falte y lista (más reciente primero)
 POST /api/v1/notifications/{id}/read
 POST /api/v1/notifications/read-all
@@ -126,7 +133,7 @@ RBAC más allá de un único rol (`ROLE_USER`), OAuth2/OpenID Connect con un pro
 
 ## Notificaciones
 
-Se generan `PAYMENT_DUE` / `PAYMENT_DUE_SOON` (tarjeta con deuda cuyo pago vence hoy o en los próximos 3 días) e `INSTALLMENT_DUE` (cuota de un plan MSI/MCI por vencer). Se generan tanto al vuelo (cada `GET /api/v1/notifications`) como por un scheduler diario (`@Scheduled`, 8am), pensado para cuando se agregue push/email — hoy solo quedan disponibles vía esta API ("notificaciones web"). `PAYMENT_OVERDUE`, `BUDGET_EXCEEDED` y `UNUSUAL_EXPENSE` están declaradas pero no se disparan todavía (requieren seguimiento por ciclo/estado de cuenta, presupuestos, y detección de anomalías respectivamente — plan.md, sección 31).
+Se generan `PAYMENT_DUE` / `PAYMENT_DUE_SOON` (tarjeta con deuda cuyo pago vence hoy o en los próximos 3 días) e `INSTALLMENT_DUE` (cuota de un plan MSI/MCI por vencer). Se generan tanto al vuelo (cada `GET /api/v1/notifications`) como por un scheduler diario (`@Scheduled`, 8am), pensado para cuando se agregue push/email — hoy solo quedan disponibles vía esta API ("notificaciones web"). Los presupuestos (B15) generan `BUDGET_NEAR_LIMIT` al llegar al 80 % y `BUDGET_EXCEEDED` al pasarse, una vez por presupuesto y mes (plan.md, sección 22). `PAYMENT_OVERDUE` y `UNUSUAL_EXPENSE` están declaradas pero no se disparan todavía (requieren seguimiento por ciclo/estado de cuenta y detección de anomalías respectivamente — plan.md, sección 31).
 
 ## Exposición y red
 

@@ -11,16 +11,16 @@ import java.time.LocalDate
 import java.util.UUID
 
 /**
- * Eventos de notificación (plan.md, sección 9). Este B6 solo genera
- * PAYMENT_DUE, PAYMENT_DUE_SOON e INSTALLMENT_DUE — los demás quedan
- * declarados para no migrar el enum otra vez, pero todavía no se disparan:
+ * Eventos de notificación (plan.md, sección 9). B6 genera PAYMENT_DUE,
+ * PAYMENT_DUE_SOON e INSTALLMENT_DUE; B15 agrega BUDGET_NEAR_LIMIT y
+ * BUDGET_EXCEEDED (presupuestos, plan.md sección 22: una de cada una por
+ * presupuesto y mes, con [Notification.forDate] = día 1 del mes). Los demás
+ * quedan declarados para no migrar el enum otra vez, pero todavía no se disparan:
  *
  * - PAYMENT_OVERDUE requeriría llevar el estado de pago por ciclo/estado de
  *   cuenta (qué ciclo ya se pagó y cuál no); hoy solo sabemos la *próxima*
  *   fecha límite (siempre futura por construcción, ver BillingCycleCalculator),
  *   no si la anterior quedó sin pagar.
- * - BUDGET_EXCEEDED necesita la entidad Budget (plan.md, sección 31 —
- *   explícitamente posterior al MVP, todavía no existe).
  * - UNUSUAL_EXPENSE necesita detección de anomalías/gastos recurrentes
  *   (sección 31, también posterior al MVP).
  *
@@ -39,6 +39,7 @@ enum class NotificationType {
     PAYMENT_DUE_SOON,
     PAYMENT_OVERDUE,
     INSTALLMENT_DUE,
+    BUDGET_NEAR_LIMIT,
     BUDGET_EXCEEDED,
     UNUSUAL_EXPENSE,
     SAT_SYNC_COMPLETED,
@@ -78,7 +79,7 @@ class Notification(
     @Column(nullable = false, length = 1000)
     var message: String,
 
-    /** id de la tarjeta o de la cuota a la que se refiere, según [type]. */
+    /** id de la tarjeta, la cuota o el presupuesto al que se refiere, según [type]. */
     @Column(name = "related_entity_id")
     var relatedEntityId: UUID? = null,
 
