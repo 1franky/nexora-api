@@ -33,9 +33,10 @@ data class MonthlyPoint(val month: YearMonth, val amount: BigDecimal)
  * tarjeta, ver TransactionService.recordCreditCardPurchase — se registra por
  * el monto completo el día de la compra, igual que currentDebt). CREDIT_CARD_PAYMENT
  * queda fuera: es solo mover dinero para cubrir una deuda ya contada aquí como
- * gasto en el momento de la compra, no gasto nuevo.
+ * gasto en el momento de la compra, no gasto nuevo. Los presupuestos (B15,
+ * [com.nexora.api.budget.domain.BudgetService]) usan la misma definición.
  */
-private val EXPENSE_TYPES = setOf(TransactionType.EXPENSE, TransactionType.CREDIT_CARD_PURCHASE)
+val EXPENSE_TYPES = setOf(TransactionType.EXPENSE, TransactionType.CREDIT_CARD_PURCHASE)
 
 data class DashboardView(
     val month: YearMonth,

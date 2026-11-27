@@ -21,7 +21,7 @@ class NotificationScheduler(
 
     @Scheduled(cron = "0 0 8 * * *")
     fun generateDailyNotifications() {
-        log.info("Generando notificaciones diarias (pagos y cuotas por vencer)")
+        log.info("Generando notificaciones diarias (pagos, cuotas y presupuestos)")
         notificationService.generateForAllUsers()
     }
 }

@@ -1,5 +1,6 @@
 {
   "endpoints": [
+    "DELETE /api/v1/budgets/{id}",
     "DELETE /api/v1/sat/certificate",
     "DELETE /api/v1/sat/contrapartes/{id}",
     "DELETE /api/v1/scheduled-charges/{id}",
@@ -8,6 +9,8 @@
     "GET /api/v1/accounts/summary",
     "GET /api/v1/accounts/{id}",
     "GET /api/v1/audit-log",
+    "GET /api/v1/budgets",
+    "GET /api/v1/budgets/{id}",
     "GET /api/v1/categories",
     "GET /api/v1/credit-cards",
     "GET /api/v1/credit-cards/{cardId}/installment-plans",
@@ -32,6 +35,7 @@
     "POST /api/v1/auth/logout",
     "POST /api/v1/auth/refresh",
     "POST /api/v1/auth/reset-password",
+    "POST /api/v1/budgets",
     "POST /api/v1/categories",
     "POST /api/v1/categories/{id}/activate",
     "POST /api/v1/categories/{id}/archive",
@@ -53,6 +57,7 @@
     "POST /api/v1/transfers",
     "POST /api/v1/users",
     "PUT /api/v1/accounts/{id}",
+    "PUT /api/v1/budgets/{id}",
     "PUT /api/v1/credit-cards/{id}",
     "PUT /api/v1/credit-cards/{id}/purchases/{transactionId}",
     "PUT /api/v1/installment-plans/{id}",
@@ -91,6 +96,27 @@
     "BalanceSummaryResponse": [
       "availableBalance",
       "netWorth"
+    ],
+    "BudgetAmountRequest": [
+      "amount"
+    ],
+    "BudgetRequest": [
+      "amount",
+      "categoryId"
+    ],
+    "BudgetResponse": [
+      "amount",
+      "categoryArchived",
+      "categoryId",
+      "categoryName",
+      "createdAt",
+      "currency",
+      "id",
+      "month",
+      "percentUsed",
+      "remaining",
+      "spent",
+      "status"
     ],
     "CategoryAmountResponse": [
       "amount",

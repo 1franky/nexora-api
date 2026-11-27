@@ -1,5 +1,7 @@
 package com.nexora.api.notification.domain
 
+import com.nexora.api.budget.domain.BudgetService
+import com.nexora.api.budget.domain.BudgetStatus
 import com.nexora.api.common.domain.NotFoundException
 import com.nexora.api.creditcard.domain.CardPaymentScheduleService
 import com.nexora.api.creditcard.domain.CreditCardService
@@ -14,6 +16,7 @@ import java.math.BigDecimal
 import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
@@ -27,12 +30,13 @@ class NotificationService(
     private val cardPaymentScheduleService: CardPaymentScheduleService,
     private val installmentPlanService: InstallmentPlanService,
     private val installmentRepository: InstallmentRepository,
+    private val budgetService: BudgetService,
 ) {
 
     private val log = LoggerFactory.getLogger(NotificationService::class.java)
 
     /**
-     * Revisa tarjetas y cuotas del usuario y genera las notificaciones que
+     * Revisa tarjetas, cuotas y presupuestos del usuario y genera las notificaciones que
      * falten (no duplica si ya se generó una del mismo tipo/entidad hoy).
      * Se llama tanto al listar (para que el usuario siempre vea datos al
      * día al abrir la app) como desde [NotificationScheduler] (para poder
@@ -91,7 +95,42 @@ class NotificationService(
             }
         }
 
+        created += generateBudgetAlerts(userId, today)
         return created
+    }
+
+    /**
+     * B15 (plan.md sección 22): BUDGET_NEAR_LIMIT al llegar al 80 % y BUDGET_EXCEEDED al pasarse,
+     * cada una **una vez por presupuesto y mes** (forDate = día 1 del mes). Si ya se avisó que se
+     * pasó, no se avisa después que está cerca (p. ej. si se borró un gasto).
+     */
+    private fun generateBudgetAlerts(userId: UUID, today: LocalDate): List<Notification> {
+        val month = YearMonth.from(today)
+        val monthKey = month.atDay(1)
+        return budgetService.progressForUser(userId, month).mapNotNull { progress ->
+            val budgetId = requireNotNull(progress.budget.id)
+            val name = progress.category?.let { "de ${it.name}" } ?: "general"
+            val spent = progress.spent
+            val limit = progress.budget.amount.setScale(2, RoundingMode.HALF_UP)
+            when (progress.status) {
+                BudgetStatus.EXCEEDED -> ensureNotification(
+                    userId, NotificationType.BUDGET_EXCEEDED, budgetId, "Presupuesto excedido",
+                    "Te pasaste del presupuesto $name: llevas \$$spent de \$$limit este mes.", monthKey,
+                )
+                BudgetStatus.NEAR_LIMIT -> {
+                    val alreadyExceeded = notificationRepository.existsByUserIdAndTypeAndRelatedEntityIdAndForDate(
+                        userId, NotificationType.BUDGET_EXCEEDED, budgetId, monthKey,
+                    )
+                    if (alreadyExceeded) null else ensureNotification(
+                        userId, NotificationType.BUDGET_NEAR_LIMIT, budgetId, "Presupuesto cerca del límite",
+                        "Llevas el ${progress.percentUsed.stripTrailingZeros().toPlainString()} % del presupuesto $name: " +
+                            "\$$spent de \$$limit este mes.",
+                        monthKey,
+                    )
+                }
+                BudgetStatus.OK -> null
+            }
+        }
     }
 
     /**

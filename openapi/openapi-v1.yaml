@@ -2,7 +2,7 @@ openapi: 3.1.0
 info:
   description: API central de la plataforma de finanzas personales Nexora.
   title: Nexora API
-  version: 1.0.0
+  version: 1.1.0
 security:
 - bearerAuth: []
 tags:
@@ -16,6 +16,9 @@ tags:
   name: SAT
 - description: Movimiento de dinero entre dos cuentas propias del usuario.
   name: Transferencias
+- description: "Topes de gasto mensuales por categoría o generales, con lo gastado\
+    \ en el mes."
+  name: Presupuestos
 - description: Categorías de ingreso/gasto para clasificar movimientos.
   name: Categorías
 - description: "Métricas agregadas para la pantalla principal: disponible, patrimonio,\
@@ -292,6 +295,131 @@ paths:
       summary: Restablecer la contraseña con el código recibido
       tags:
       - Autenticación
+  /api/v1/budgets:
+    get:
+      description: El general primero y luego por nombre de categoría.
+      operationId: budgetList
+      parameters:
+      - description: "Mes a calcular (yyyy-MM). Por omisión, el actual."
+        in: query
+        name: month
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/BudgetResponse"
+          description: OK
+      summary: Listar presupuestos con lo gastado
+      tags:
+      - Presupuestos
+    post:
+      description: Uno por categoría de gasto y uno general por usuario.
+      operationId: budgetCreate
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetRequest"
+        required: true
+      responses:
+        "201":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BudgetResponse"
+          description: "Presupuesto creado, con lo gastado en el mes en curso."
+        "400":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: "Monto no positivo, categoría de ingreso o archivada."
+        "409":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/ApiError"
+          description: Ya existe un presupuesto para esa categoría (o uno general).
+      summary: Crear un presupuesto
+      tags:
+      - Presupuestos
+  /api/v1/budgets/{id}:
+    delete:
+      description: Las notificaciones que ya generó se conservan.
+      operationId: budgetDelete
+      parameters:
+      - description: Id del presupuesto.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        "204":
+          description: Borrado.
+      summary: Borrar un presupuesto
+      tags:
+      - Presupuestos
+    get:
+      operationId: budgetGet
+      parameters:
+      - description: Id del presupuesto.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - description: "Mes a calcular (yyyy-MM). Por omisión, el actual."
+        in: query
+        name: month
+        required: false
+        schema:
+          type: string
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BudgetResponse"
+          description: OK
+      summary: Consultar un presupuesto con lo gastado
+      tags:
+      - Presupuestos
+    put:
+      description: Aplica al mes en curso y a los siguientes.
+      operationId: budgetUpdate
+      parameters:
+      - description: Id del presupuesto.
+        in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetAmountRequest"
+        required: true
+      responses:
+        "200":
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/BudgetResponse"
+          description: OK
+      summary: Cambiar el monto de un presupuesto
+      tags:
+      - Presupuestos
   /api/v1/categories:
     get:
       description: Incluye las archivadas — un movimiento ya categorizado sigue mostrando
@@ -1553,6 +1681,79 @@ components:
           type: number
         netWorth:
           type: number
+    BudgetAmountRequest:
+      type: object
+      description: Solo se cambia el monto; para otra categoría se borra el presupuesto
+        y se crea otro.
+      properties:
+        amount:
+          type: number
+          description: Tope mensual en MXN.
+          minimum: 0.0
+      required:
+      - amount
+    BudgetRequest:
+      type: object
+      properties:
+        amount:
+          type: number
+          description: Tope mensual en MXN.
+          minimum: 0.0
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+          description: Categoría de gasto activa. null = presupuesto general (todo
+            el gasto del mes).
+      required:
+      - amount
+    BudgetResponse:
+      type: object
+      properties:
+        amount:
+          type: number
+        categoryArchived:
+          type: boolean
+          description: true si la categoría se archivó después; el presupuesto sigue
+            contando.
+        categoryId:
+          type:
+          - string
+          - "null"
+          format: uuid
+          description: null en el presupuesto general.
+        categoryName:
+          type:
+          - string
+          - "null"
+          description: null en el presupuesto general.
+        createdAt:
+          type: string
+          format: date-time
+        currency:
+          type: string
+          description: "Siempre MXN: el gasto en otras monedas se convierte."
+        id:
+          type: string
+          format: uuid
+        month:
+          type: string
+          description: Mes al que se refieren spent/remaining/percentUsed/status (yyyy-MM).
+        percentUsed:
+          type: number
+        remaining:
+          type: number
+          description: Negativo cuando ya se pasó.
+        spent:
+          type: number
+        status:
+          type: string
+          description: "OK (< 80 %), NEAR_LIMIT (80–100 %) o EXCEEDED (> 100 %)."
+          enum:
+          - OK
+          - NEAR_LIMIT
+          - EXCEEDED
     CategoryAmountResponse:
       type: object
       properties:
@@ -2200,6 +2401,7 @@ components:
           - PAYMENT_DUE_SOON
           - PAYMENT_OVERDUE
           - INSTALLMENT_DUE
+          - BUDGET_NEAR_LIMIT
           - BUDGET_EXCEEDED
           - UNUSUAL_EXPENSE
           - SAT_SYNC_COMPLETED

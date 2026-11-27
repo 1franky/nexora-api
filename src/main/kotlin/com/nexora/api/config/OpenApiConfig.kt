@@ -16,7 +16,7 @@ private const val BEARER_AUTH_SCHEME = "bearerAuth"
  * menor si el cambio es aditivo, parche si solo cambia documentación; un cambio incompatible va en `/api/v2` y en
  * un archivo `openapi-v2.yaml` nuevo, no aquí.
  */
-const val CONTRACT_VERSION = "1.0.0"
+const val CONTRACT_VERSION = "1.1.0"
 
 /**
  * Todos los endpoints requieren el access token JWT emitido por
